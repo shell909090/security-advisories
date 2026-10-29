@@ -81,3 +81,13 @@ make check       # 测试 + 所有静态指标（默认 make 目标）
 ```
 
 开发依赖由 uv 管理：`mccabe` 计算圈复杂度，`cognitive-complexity` 计算函数认知复杂度，`radon` 计算文件级 MI（包含多行字符串注释）。检查涵盖源码、测试及检查脚本，排除隐藏目录和 Python 缓存。超限打印文件、位置及实际值并以非零状态退出；不使用平均值掩盖单项超限。所有检查使用固定阈值，不对存量代码豁免。
+
+## 扩展关注清单
+
+本地 `products.json` 已包含原有四个 AI 工具及 goimports、golangci-lint、govulncheck、inb、migrate、Trivy、ttyd、Zellij、LiteLLM、Pi Coding Agent、Playwright、Ruff、uv/uvx、Uvicorn、yt-dlp、Chrome、Brave、Firefox。
+
+- uvx 是 uv 的命令别名，共用一个产品；Pi 同时查询迁移前后的 npm 包名。
+- inb 对应 `yuzu-hub/inb`，migrate 对应 `golang-migrate/migrate`。
+- Go 按模块查询；模块公告属于产品线索，不代表命令实际使用了受影响代码。
+- `packages: []` 用于没有对应包生态的产品，GHSA/OSV 包查询自动为空；Chrome、Firefox 主要依靠 CVE/NVD，Brave 和 ttyd 另查询项目公告。浏览器厂商公告页面尚无专用采集器，Chromium 漏洞也不会自动推断为 Brave 已受影响。
+- JSON 仍按仓库约定忽略，新增产品清单保存在本地，不随 Git 提交。

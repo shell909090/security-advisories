@@ -140,7 +140,7 @@ def run(args):
     from sources import discover
     available = discover()
     products = json.loads(args.products.read_text())
-    if not products or any(not p.get('id') or not p.get('packages') for p in products):
+    if not products or any(not p.get('id') or not isinstance(p.get('packages'), list) for p in products):
         raise ValueError('Invalid products configuration')
     state = json.loads(args.state.read_text()) if args.state.exists() else {'version': 1, 'units': {}, 'seen_output': {}}
     if state.get('version') != 1:
