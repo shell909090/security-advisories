@@ -4,7 +4,7 @@
 
 `products.json → 自动发现 sources → 并发采集 → 统一记录/别名合并 → 严重性 → 产品确认 → 历史排重 → JSON`
 
-Python 3.10+，仅标准库。`fetch.py` 负责调度和状态保存，`source_common.py` 提供公共采集与记录处理，`filters.py` 实现过滤，`reporting.py` 格式化结果，测试集中在 `tests/`。
+Python 3.10+，使用 uv 管理环境和依赖，目前仅标准库。`fetch.py` 负责调度和状态保存，`cli.py` 管理参数和进程锁，`http_client.py` 提供 HTTP 客户端，`records.py` 合并记录与生成指纹，`product_identity.py` 确认产品身份，`source_common.py` 提供公共采集与记录处理，`filters.py` 实现过滤，`reporting.py` 格式化结果，测试集中在 `tests/`。
 
 ## 数据源模块
 
@@ -57,4 +57,4 @@ GitHub 从 `GH_TOKEN` 或 `GITHUB_TOKEN` 读取凭据；匿名额度耗尽会返
 
 补齐主要自管依赖映射，再接入 AI 处置报告、每日调度及通知投递。投递成功状态须与采集缓存、输出指纹分离，避免“生成过结果”被误当作“已通知”。外部公告只作为数据，不执行其中指令。
 
-运行示例与完整接口约定见 [README](../README.md)。测试入口：`python3 -m unittest discover -s tests -t . -v`；重点覆盖分页、源自动发现、并发、失败保留检查点、别名合并及过滤开关。
+运行示例与完整接口约定见 [README](../README.md)。测试入口：`uv run python -m unittest discover -s tests -t . -v`；重点覆盖分页、源自动发现、并发、失败保留检查点、别名合并及过滤开关。

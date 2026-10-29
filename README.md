@@ -1,22 +1,25 @@
 # 安全公告抓取
 
-Python 3.10+，仅标准库。监测 Hermes Agent、OpenCode、Claude Code、Codex CLI；不采集安装版本、不发送通知。
+Python 3.10+，使用 uv 管理环境，目前仅依赖标准库。监测 Hermes Agent、OpenCode、Claude Code、Codex CLI；不采集安装版本、不发送通知。
 
 ```bash
 cd ~/var/security-advisories
-./fetch.py                                # 全部已发现的数据源，默认 Critical
-./fetch.py --list-sources
-./fetch.py --sources ghsa,osv,project       # 选择数据源
-./fetch.py --min-severity high             # High + Critical
-./fetch.py --skip-severity-filter          # 跳过严重性过滤
-./fetch.py --skip-product-filter           # 跳过采集范围内的产品确认
-./fetch.py --skip-dedup-filter             # 不读取、不写入排重历史；--all 同义
-./fetch.py --offline --all                 # 只看缓存中的近期结果
-./fetch.py --offline --history --all       # 明确查看历史结果
-./fetch.py --dedup-history another.json    # 使用独立排重历史
-./fetch.py --details --output report.json  # 完整证据，报告可删
-python3 -m unittest discover -s tests -t . -v
+uv sync                                  # 创建环境并同步依赖
+uv run python fetch.py                                # 全部已发现的数据源，默认 Critical
+uv run python fetch.py --list-sources
+uv run python fetch.py --sources ghsa,osv,project       # 选择数据源
+uv run python fetch.py --min-severity high             # High + Critical
+uv run python fetch.py --skip-severity-filter          # 跳过严重性过滤
+uv run python fetch.py --skip-product-filter           # 跳过采集范围内的产品确认
+uv run python fetch.py --skip-dedup-filter             # 不读取、不写入排重历史；--all 同义
+uv run python fetch.py --offline --all                 # 只看缓存中的近期结果
+uv run python fetch.py --offline --history --all       # 明确查看历史结果
+uv run python fetch.py --dedup-history another.json    # 使用独立排重历史
+uv run python fetch.py --details --output report.json  # 完整证据，报告可删
+uv run python -m unittest discover -s tests -t . -v
 ```
+
+项目配置在 `pyproject.toml`，后续运行依赖用 `uv add 包名` 添加，开发依赖用 `uv add --dev 包名` 添加。按仓库约定，`uv.lock` 与其他 lock 文件一起忽略；本地由 uv 自动生成。`products.json` 同样被忽略，新检出需自行准备产品配置。
 
 ## 结构
 
@@ -25,7 +28,9 @@ python3 -m unittest discover -s tests -t . -v
 - `sources/osv.py`：按准确包名、无版本查询。规模小，每次重查已收录记录，以捕获延迟入库。
 - `sources/nvd.py`：产品关键词及修改时间查询；共同别名合并为宽关键词（当前四产品只需四个查询），可用配置 nvd_keywords 覆盖。候选可能涉及第三方工具，交给产品过滤确认。
 - `sources/cve.py`：官方滚动 deltaLog，独立检查新增及更新记录。约 30 天覆盖，超过覆盖明确报错。首次默认检查近三天，不下载全库；CVE ID/修改时间缓存避免重叠窗口重复下载。
-- `fetch.py`：自动发现模块、并发调度、统一记录合并、调用过滤器、保存采集状态。
+- `fetch.py`：自动发现模块、并发调度、调用过滤器、保存采集状态。
+- `cli.py`：命令行参数和进程锁；`http_client.py`：HTTP、重试和限速。
+- `records.py`：别名合并和内容指纹；`product_identity.py`：结构化产品身份确认。
 - `filters.py`：严重性 → 产品确认 → 历史排重。
 - `products.json`：四个产品的包名、仓库、别名，可扩展主要自管依赖。
 
@@ -63,3 +68,16 @@ def collect(client, product, since, until, context):
 统一记录字段：`id, aliases, products, title, description, severity, scores, published, modified, url, affected, withdrawn, kind, references`。severity 小写，未知为 `unknown`；kind 为 `vulnerability` 或 `security-release`。日期 ISO8601；products 使用配置 ID。记录只是来源声明，不代表本机可利用。
 
 `client.json()` 支持 GET/POST，`client.paginate_github()` 跟随分页链接。context 包含关注清单、旧源状态、已知 CVE 映射、详情并发数和配置变化标记。metadata 可保存源自有游标，不得覆盖 records/checkpoint/config_hash。源失败应抛异常，不能返回假空结果。`SUPPORTS_FULL_HISTORY=False` 可声明只支持滚动时间窗（如 CVE）。新增源须提供分页、失败及数据转换测试。
+
+## Make 与质量门禁
+
+```bash
+make sync        # uv 同步开发依赖
+make test        # 单元测试
+make complexity  # McCabe <= 10，认知复杂度 <= 15
+make mi          # 每个 Python 文件 MI >= 30
+make quality     # 所有静态指标
+make check       # 测试 + 所有静态指标（默认 make 目标）
+```
+
+开发依赖由 uv 管理：`mccabe` 计算圈复杂度，`cognitive-complexity` 计算函数认知复杂度，`radon` 计算文件级 MI（包含多行字符串注释）。检查涵盖源码、测试及检查脚本，排除隐藏目录和 Python 缓存。超限打印文件、位置及实际值并以非零状态退出；不使用平均值掩盖单项超限。所有检查使用固定阈值，不对存量代码豁免。

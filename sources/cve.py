@@ -31,14 +31,7 @@ def cve_delta(client, products, since, until, previous_seen, previous_records, w
     oldest = min(parse_time(b['fetchTime']) for b in batches)
     if since < oldest:
         raise RuntimeError(f'CVE coverage gap: requested {stamp(since)}, delta log begins {stamp(oldest)}; use --since explicitly after backfill')
-    entries = {}
-    # Do not trust ordering; select by ingestion time, not the record publication date.
-    for batch in batches:
-        if since <= parse_time(batch['fetchTime']) <= until:
-            for entry in batch.get('new', []) + batch.get('updated', []):
-                key = entry['cveId']
-                if key not in entries or entry['dateUpdated'] > entries[key]['dateUpdated']:
-                    entries[key] = entry
+    entries = delta_entries(batches, since, until)
     seen = {k: v for k, v in previous_seen.items() if parse_time(v) >= oldest}
     pending = [entry for key, entry in entries.items() if seen.get(key) != entry['dateUpdated']]
     print(f'cve: {len(pending)} changed records to inspect', file=sys.stderr, flush=True)
@@ -75,3 +68,15 @@ def collect(client, product, since, until, context):
 
 MATCH_BASIS = 'product-description-or-reference'
 SUPPORTS_FULL_HISTORY = False
+
+
+def delta_entries(batches, since, until):
+    entries = {}
+    # Do not trust ordering; select by ingestion time, not the record publication date.
+    for batch in batches:
+        if since <= parse_time(batch['fetchTime']) <= until:
+            for entry in batch.get('new', []) + batch.get('updated', []):
+                key = entry['cveId']
+                if key not in entries or entry['dateUpdated'] > entries[key]['dateUpdated']:
+                    entries[key] = entry
+    return entries
