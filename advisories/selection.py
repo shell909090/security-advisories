@@ -1,4 +1,5 @@
 """Offline catalog selection and alias-aware, product-scoped display history."""
+from .evidence import active_evidence
 import datetime as dt
 import logging
 from .filters import is_recent
@@ -78,7 +79,7 @@ def remember(history, selected):
 
 def display_fingerprint(row):
     evidence = []
-    for item in row['evidence']:
+    for item in active_evidence(row):
         content = meaningful(item)
         content.pop('id', None)
         content.pop('aliases', None)

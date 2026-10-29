@@ -1,11 +1,12 @@
 """Compact, severity-gated collection reports; no notification acknowledgement."""
 import json
+from .evidence import active_evidence
 
 LEVEL = {'unknown': -1, 'none': 0, 'low': 1, 'moderate': 2, 'medium': 2, 'high': 3, 'critical': 4}
 
 
 def compact(record, change, details=False):
-    evidence = record.get('evidence', [])
+    evidence = active_evidence(record)
     aliases = sorted(set([record['id']] + record.get('aliases', [])))
     scores = {json.dumps(s, sort_keys=True): s for e in evidence for s in e.get('scores', [])}
     result = {k: record.get(k) for k in ('id', 'products', 'severity', 'withdrawn', 'withdrawal_conflict')}
@@ -16,6 +17,6 @@ def compact(record, change, details=False):
                   links=sorted({e['url'] for e in evidence if e.get('url')}),
                   sources=sorted({e['source'] for e in evidence if e.get('source')}))
     if details:
-        result['evidence'] = evidence
+        result['evidence'] = record.get('evidence', [])
     return result
 

@@ -40,7 +40,8 @@ def merge_records(units):
     for rows in groups.values():
         ids = sorted({v for _, r in rows for v in [r['id']] + r.get('aliases', [])})
         identity = next((i for i in ids if i.startswith('CVE-')), ids[0])
-        severity = max((r.get('severity', 'unknown') for _, r in rows), key=lambda s: LEVEL.get(s, -1))
+        severity = max((r.get('severity', 'unknown') for _, r in rows if not r.get('withdrawn')),
+                       key=lambda s: LEVEL.get(s, -1), default='unknown')
         evidence = [{'source': u, **r} for u, r in sorted(rows, key=lambda x: (x[0], x[1]['id']))]
         statuses = {bool(r.get('withdrawn')) for _, r in rows}
         rejected = any(r.get('withdrawn') and r['id'].startswith('CVE-') and u.split(':')[0] in ('cve', 'nvd')

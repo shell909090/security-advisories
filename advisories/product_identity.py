@@ -1,5 +1,6 @@
 """Confirm affected product identities from structured source evidence."""
 import re
+from .evidence import active_evidence
 
 
 def normalize(value):
@@ -26,7 +27,7 @@ def identity_matches(value, names, vendors):
 def scan(value, names, vendors):
     if isinstance(value, list):
         return any(scan(v, names, vendors) for v in value)
-    if not isinstance(value, dict):
+    if not isinstance(value, dict) or value.get('vulnerable') is False:
         return False
     if vendors and value.get('vendor') and normalize(value['vendor']) not in vendors:
         return False
@@ -56,6 +57,6 @@ def evidence_confirmed(evidence, record, by_id):
 
 def product_confirmed(record, products):
     by_id = {p['id']: p for p in products}
-    return any(evidence_confirmed(e, record, by_id) for e in record.get('evidence', []))
+    return any(evidence_confirmed(e, record, by_id) for e in active_evidence(record))
 
 

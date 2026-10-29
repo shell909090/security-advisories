@@ -1,4 +1,5 @@
 """Evidence-preserving version extraction; no cross-branch version arithmetic."""
+from .evidence import active_evidence
 import re
 
 
@@ -95,7 +96,7 @@ def evidence_versions(evidence):
 
 def version_facts(row):
     facts = set()
-    for evidence in row['evidence']:
+    for evidence in active_evidence(row):
         for affected, fixed, component in evidence_versions(evidence):
             facts.add((affected, fixed, component, evidence.get('source', 'unknown')))
     return sorted(facts)

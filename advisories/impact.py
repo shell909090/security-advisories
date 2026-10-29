@@ -1,4 +1,5 @@
 """Conservative evidence labels, not AI analysis or exploitability verdicts."""
+from .evidence import active_evidence
 import re
 
 RULES = {
@@ -27,7 +28,7 @@ def sentence_tags(sentence):
 
 def impact_tags(row):
     tags = set()
-    for evidence in row['evidence']:
+    for evidence in active_evidence(row):
         text = (evidence.get('title') or '') + '\n' + (evidence.get('description') or '')
         for sentence in re.split(r'(?<=[.!?])\s+|\n', text):
             tags.update(sentence_tags(sentence))

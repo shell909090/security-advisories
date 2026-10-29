@@ -136,9 +136,11 @@ affected 保留来源结构，不统一扁平化：
 
 ## MergedRecord：跨来源漏洞
 
-字段：`id`（优先 CVE）、`aliases`（包含主编号的完整编号数组）、`products`、`severity`（各源最高）、`withdrawn`、`withdrawal_conflict`、`needs_review:true`、`evidence`、`fingerprint`。
+字段：`id`（优先 CVE）、`aliases`（包含主编号的完整编号数组）、`products`、`severity`（未撤回来源最高，无有效来源时 unknown）、`withdrawn`、`withdrawal_conflict`、`needs_review:true`、`evidence`、`fingerprint`。
 
 evidence 为 `[{source:unit_key,...NormalizedRecord}]`。用传递闭包合并别名；同一编号不同源证据保留。官方 CVE/NVD rejected 优先认定撤回，否则所有证据撤回才整体撤回。catalog 中 products 被收窄到单产品数组。
+
+产品归属扫描跳过明确 `vulnerable:false` 的节点。未撤回证据才参与归属、评级、版本、标签、时间筛选和展示指纹；原始 evidence 及同步指纹仍完整保留，detail 标明每个来源是否撤回。官方 rejected 的整体撤回优先级不变。已有 catalog 在下次 update 时按新规则重建。
 
 fingerprint 为稳定 JSON（键排序、紧凑分隔、UTF-8）的 SHA-256 十六进制；内容含来源、ID/别名/产品、规范化空白后的标题/正文、评级、评分、affected、withdrawn、kind，不含时间和独立引用列表。
 
@@ -201,7 +203,7 @@ CVE 的 coverage 保存每产品独立 checkpoint/hash，取本次所选产品�
 
 键为 `product_id:advisory_alias`，所有别名都登记。展示 fingerprint 与合并指纹不同：排除 ID、别名、纯编号标题、时间、独立引用列表，保留来源及有效内容、汇总级别和撤回状态；防止只新增 CVE 编号就重复显示。只在输出成功后更新实际展示项。旧 version:1 历史无法证明按产品展示，视为新历史并在下一次成功展示时写 version:2；其他未知版本报错。
 
-summary Markdown 表列为：产品、Critical、High、受影响版本/组件、公告修复版本、证据标签。计数基于本次选择项；空结果返回空字符串。detail Markdown 按漏洞分节，列别名/级别/标签、版本证据表，再按来源展示时间、评分 JSON、URL、引用格式正文和 affected JSON。
+summary 直接输出 Markdown 表格，不输出标题或前置说明段落。表列为：产品、Critical、High、受影响版本/组件、公告修复版本、证据标签。计数基于本次选择项；空结果返回空字符串。detail Markdown 按漏洞分节，列别名/级别/标签、版本证据表，再按来源展示时间、评分 JSON、URL、引用格式正文和 affected JSON。
 
 版本提取支持前述主要结构；CPE 排除上界不直接等同修复版；Chrome 正文明确 prior to VERSION 可补充修复边界。项目 patched_versions 和全局 first_patched_version 均支持。保留分支/平台；无法确认时标未知，不靠版本字符串大小合并成“全部修复版本”。
 

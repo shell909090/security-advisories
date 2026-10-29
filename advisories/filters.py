@@ -1,4 +1,5 @@
 """Independent severity, product identity, and output-history filters."""
+from .evidence import active_evidence
 import datetime as dt
 from advisories.reporting import compact, LEVEL
 
@@ -27,7 +28,7 @@ def apply_filters(merged, history, args, products):
 
 def is_recent(row, cutoff, now):
     recent = False
-    for e in row.get('evidence', []):
+    for e in active_evidence(row):
         for key in ('published', 'modified'):
             try:
                 date = dt.datetime.fromisoformat((e.get(key) or '').replace('Z', '+00:00'))

@@ -23,9 +23,7 @@ def render(selected):
     groups = {}
     for product, row in selected:
         groups.setdefault(product['id'], (product, []))[1].append(row)
-    lines = ['# 产品漏洞摘要', '',
-             '计数为本次筛选后展示的活跃漏洞。标签来自公告措辞，包含后果和缺陷类型；未使用 AI 推断。', '',
-             '| 产品 | Critical | High | 受影响版本/组件 | 公告修复版本 | 证据标签 |',
+    lines = ['| 产品 | Critical | High | 受影响版本/组件 | 公告修复版本 | 证据标签 |',
              '| --- | ---: | ---: | --- | --- | --- |']
     lines.extend(render_group(*groups[key]) for key in sorted(groups))
     return '\n'.join(lines) + '\n'
