@@ -1,0 +1,66 @@
+"""Single entry point with independent collection and offline display commands."""
+import argparse
+import sys
+from pathlib import Path
+from . import update, views
+from .locking import locked
+from .validation import validate
+ROOT = Path(__file__).resolve().parents[1]
+LEVELS = ['low', 'medium', 'high', 'critical']
+
+
+def common(parser):
+    parser.add_argument('--products', type=Path, default=ROOT / 'products.json', help='Product configuration file')
+    parser.add_argument('--state', type=Path, default=ROOT / 'state.json')
+    parser.add_argument('--product', help='Product ID; comma-separated for update/summary')
+    parser.add_argument('--output', type=Path)
+
+
+def update_options(parser):
+    parser.add_argument('--sources', help='Comma-separated source names; default all')
+    parser.add_argument('--min-severity', choices=LEVELS, default='critical')
+    parser.add_argument('--days', type=float, default=3)
+    parser.add_argument('--since', help='Explicit ISO collection start')
+    parser.add_argument('--overlap-days', type=float, default=2)
+    parser.add_argument('--history', action='store_true', help='Backfill full history where supported')
+    parser.add_argument('--jobs', type=int, default=6)
+    parser.add_argument('--workers', type=int, default=8)
+    parser.add_argument('--timeout', type=float, default=30)
+    parser.add_argument('--proxy')
+
+
+def summary_options(parser):
+    parser.add_argument('--min-severity', choices=LEVELS, default='high')
+    parser.add_argument('--days', type=float, default=3)
+    parser.add_argument('--history', action='store_true', help='Remove time filter')
+    parser.add_argument('--dedup-history', type=Path, default=ROOT / 'dedup-history.json')
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument('--all', action='store_true', help='Ignore history; do not update it')
+    mode.add_argument('--shown', action='store_true', help='Only previously shown; do not update history')
+
+
+def build_parser():
+    parser = argparse.ArgumentParser(description='Collect and inspect product security advisories')
+    commands = parser.add_subparsers(dest='command', required=True)
+    for name in ('update', 'summary', 'detail'):
+        sub = commands.add_parser(name)
+        common(sub)
+        if name == 'update':
+            update_options(sub)
+        elif name == 'summary':
+            summary_options(sub)
+        else:
+            sub.add_argument('--severity', choices=LEVELS, required=True)
+    return parser
+
+
+def main(argv=None):
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    validate(parser, args)
+    try:
+        with locked(args):
+            return {'update': update.run, 'summary': views.summary, 'detail': views.detail}[args.command](args)
+    except Exception as exc:
+        print(f'ERROR: {exc}', file=sys.stderr)
+        return 2

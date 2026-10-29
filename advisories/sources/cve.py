@@ -1,4 +1,4 @@
-from source_common import *
+from advisories.source_common import *
 import datetime as dt
 import re
 import concurrent.futures
@@ -24,18 +24,20 @@ def cve_record(raw, products):
             'references': sorted({r['url'] for b in blocks for r in b.get('references', [])})}
 
 
-def cve_delta(client, products, since, until, previous_seen, previous_records, workers):
+def cve_delta(client, products, since, until, previous_seen, previous_records, workers, progress=None):
     batches = client.json(CVE_LOG)
     if not isinstance(batches, list) or not batches:
         raise ValueError('Empty or invalid CVE delta log')
     oldest = min(parse_time(b['fetchTime']) for b in batches)
     if since < oldest:
         raise RuntimeError(f'CVE coverage gap: requested {stamp(since)}, delta log begins {stamp(oldest)}; use --since explicitly after backfill')
+    cached = progress.load() if progress else {}
+    previous_seen = {**previous_seen, **cached.get('seen', {})}
     entries = delta_entries(batches, since, until)
     seen = {k: v for k, v in previous_seen.items() if parse_time(v) >= oldest}
     pending = [entry for key, entry in entries.items() if seen.get(key) != entry['dateUpdated']]
     print(f'cve: {len(pending)} changed records to inspect', file=sys.stderr, flush=True)
-    records = []
+    records = list(cached.get('records', []))
     def fetch(entry):
         # Construct trusted raw URL; do not fetch URLs supplied inside vulnerability prose.
         match = re.fullmatch(r'CVE-(\d{4})-(\d{4,})', entry['cveId'])
@@ -49,13 +51,7 @@ def cve_delta(client, products, since, until, previous_seen, previous_records, w
         if not hits:
             hits = previous_records.get(entry['cveId'], {}).get('products', [])
         return entry, cve_record(raw, hits) if hits else None
-    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
-        for index, (entry, record) in enumerate(executor.map(fetch, pending), 1):
-            seen[entry['cveId']] = entry['dateUpdated']
-            if record:
-                records.append(record)
-            if index % 250 == 0:
-                print(f'cve: {index}/{len(pending)} inspected', file=sys.stderr, flush=True)
+    download_batches(fetch, pending, workers, records, seen, progress)
     return records, seen
 
 
@@ -63,7 +59,7 @@ def collect(client, product, since, until, context):
     old=context.get('old', {})
     seen={} if context.get('config_changed') else old.get('cve_seen', {})
     records, seen=cve_delta(client, context['products'], since, until, seen,
-                            context.get('known', {}), context.get('workers',8))
+                            context.get('known', {}), context.get('workers',8), context.get('progress'))
     return {'records':records, 'metadata':{'cve_seen':seen}}
 
 MATCH_BASIS = 'product-description-or-reference'
@@ -80,3 +76,30 @@ def delta_entries(batches, since, until):
                 if key not in entries or entry['dateUpdated'] > entries[key]['dateUpdated']:
                     entries[key] = entry
     return entries
+
+
+def download_batches(fetch, pending, workers, records, seen, progress):
+    # Bound queued work and persist successful results even if a peer fails.
+    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
+        for start in range(0, len(pending), 100):
+            batch = pending[start:start + 100]
+            error = consume_batch(executor, fetch, batch, records, seen)
+            if progress:
+                progress.save(records, seen)
+            print(f'cve: {start + len(batch)}/{len(pending)} inspected', file=sys.stderr, flush=True)
+            if error:
+                raise error
+
+
+def consume_batch(executor, fetch, batch, records, seen):
+    error = None
+    futures = [executor.submit(fetch, entry) for entry in batch]
+    for future in concurrent.futures.as_completed(futures):
+        try:
+            entry, record = future.result()
+            seen[entry['cveId']] = entry['dateUpdated']
+            if record:
+                records.append(record)
+        except Exception as exc:
+            error = exc
+    return error

@@ -1,8 +1,8 @@
 import unittest
-from sources.project import github_project
-from sources.ghsa import github_package
-from sources.nvd import nvd_product,nvd_record
-from sources.nvd import query_keywords
+from advisories.sources.project import github_project
+from advisories.sources.ghsa import github_package
+from advisories.sources.nvd import nvd_product,nvd_record
+from advisories.sources.nvd import query_keywords
 P={'id':'x','repositories':['o/r'],'packages':[],'keywords':['x']}
 class Tests(unittest.TestCase):
  def test_nvd_alias_consolidation(self):

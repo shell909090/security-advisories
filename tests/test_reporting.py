@@ -1,5 +1,5 @@
 import unittest
-from reporting import compact
+from advisories.reporting import compact
 
 class Tests(unittest.TestCase):
     def test_explicit_identifiers_and_optional_evidence(self):

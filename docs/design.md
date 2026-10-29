@@ -1,60 +1,39 @@
 # 设计
 
-## 处理流程
+## 命令与模块
 
-`products.json → 自动发现 sources → 并发采集 → 统一记录/别名合并 → 严重性 → 产品确认 → 历史排重 → JSON`
+`fetch.py` 是唯一应用入口，委托 `advisories.cli`。应用实现和来源插件均在 `advisories/`，不依赖当前工作目录；默认配置/缓存位于项目根。测试在 `tests/`，质量门禁在 `scripts/`。
 
-Python 3.10+，使用 uv 管理环境和依赖，目前仅标准库。`fetch.py` 负责调度和状态保存，`cli.py` 管理参数和进程锁，`http_client.py` 提供 HTTP 客户端，`records.py` 合并记录与生成指纹，`product_identity.py` 确认产品身份，`source_common.py` 提供公共采集与记录处理，`filters.py` 实现过滤，`reporting.py` 格式化结果，测试集中在 `tests/`。
+三个命令：
 
-## 数据源模块
+- `update --product ID[,ID] --min-severity high --days 3`：并发采集，保存同步状态，按产品确认及严重性形成收录目录；不操作展示去重。
+- `summary --product ID[,ID] --min-severity high --days 3`：离线读取目录，按时间、产品和等级过滤，再按产品+漏洞别名及内容指纹判断是否展示。默认未展示/内容更新；`--all` 忽略历史，`--shown` 仅已展示，后二者不更新历史。`--history` 取消时间窗口。
+- `detail --product ID --severity critical`：离线输出该产品、确切级别全部活跃缓存漏洞的 Markdown，不读取或写展示历史。
 
-| 模块 | 当前策略 |
-| --- | --- |
-| `sources/ghsa.py` | 按准确生态包名查询 reviewed 公告，以修改日期增量抓取并跟随分页 |
-| `sources/project.py` | 获取项目 Security Advisories；Release notes 默认关闭，显式开启后仅作额外线索 |
-| `sources/osv.py` | 按包名查询、不提供版本；重查包的公告历史，捕获延迟收录 |
-| `sources/nvd.py` | 产品关键词和修改时间查询，合并重复关键词；候选交给产品过滤确认 |
-| `sources/cve.py` | 读取官方滚动 deltaLog，并发获取新增/更新详情，以 CVE ID 和更新时间避免重复下载 |
+所有命令支持配置路径、状态路径及输出路径；summary 支持独立展示历史路径。无摘要时 stdout 为空。输出成功后原子保存展示历史；输出失败不消耗条目。
 
-`source` 模块声明 `NAME`、`GLOBAL`，实现 `collect(client, product, since, until, context)`，返回 `records` 和 `metadata`。可声明 `MATCH_BASIS`、`SUPPORTS_FULL_HISTORY`。自动发现不以下划线开头的模块；失败抛异常，不能返回假空结果。新增源需测试转换、分页和失败行为。
+## 更新和状态
 
-统一字段：`id, aliases, products, title, description, severity, scores, published, modified, url, affected, withdrawn, kind, references`。保留来源证据，未知等级用 `unknown`，公告与 Release 线索通过 `kind` 区分。
+`state.json` 保存版本、按来源分开的同步状态、成功检查点及 `catalog`（按产品分开的已收录合并漏洞），另保存每产品收录门槛。同步层保留来源证据以处理别名、跨源评分变化和撤回；summary/detail 只能读取 catalog，不从同步层绕过收录门槛。旧版仅有同步缓存时，首次显示提示先运行 update，不偷偷把旧缓存当作已经收录。
 
-CVE 日志仅覆盖滚动窗口，超范围报错，回补并非自动完成。当前不遍历全局 unreviewed GHSA，也未使用 OSV 全局增量索引，不能声称覆盖所有披露。
+选择产品后，仅调度其来源任务；CVE 为全局任务但只匹配本次产品。处理完成后只替换这些产品的 catalog，其他产品的目录与同步数据保留。合并目录包含各源旧缓存；源失败会标记目录可能过期，并打印错误，不能声称数据完整。变更产品集合或最低严重性改变采集配置指纹，以便降低门槛时重新检查覆盖窗口。
 
-## 合并和过滤
+CVE 每 100 条写独立进度文件，记录配置指纹、已检查更新时间和相关记录；部分失败保留成功结果，但不推进正式源检查点。主状态成功持久化后清理已完成的批次文件。HTTP 每线程独立 requests Session 复用连接，保留代理、重试、超时、NVD 共享限速，采集结束释放连接。
 
-按编号及别名合并同一漏洞，优先用 CVE 作主编号，保留各源评分和证据；汇总等级取最高值，评级分歧仍可见。
+## 过滤与展示去重
 
-- 严重性：`--min-severity critical` 默认，支持 high/medium/low；`--skip-severity-filter` 跳过。
-- 产品：依据准确包/仓库来源，或受影响产品/CPE 确认。描述提及、第三方集成和发现者致谢不足以确认。`--skip-product-filter` 仅跳过后置确认，不扩大源的抓取范围。
-- 排重：按重要内容指纹比较，忽略纯时间戳及独立引用列表变化；新来源证据也可能改变指纹。`--dedup-history` 指定历史，`--skip-dedup-filter`（同 `--all`）完全不读写排重历史。
+更新收录：来源记录 → 别名合并 → 对每个关注产品确认归属 → 等级门槛 → catalog。浏览器没有包映射时允许空 packages，依赖适用的 CVE/NVD/项目源。纯 Release notes 不作为漏洞计数。
 
-默认 `--days 3`，允许已知记录的内容变化越过时间窗；`--history` 去掉时间门槛，重看已排重记录还需 `--all`。时间过滤与历史排重分开计数。`--include-pending` 单列未知等级或产品待确认线索。
+摘要选择：catalog → 产品 → 等级 → 时间 → 展示历史。默认报告最近三天发布/修改的记录；已展示记录的重要内容变更允许跨越时间窗口再次展示。展示指纹忽略纯时间戳/独立引用列表变化。按产品保存历史并关联所有别名，避免主编号从 GHSA 变成 CVE 后无意义重复；某个产品的展示不影响另一产品。仅实际输出的行写历史。
 
-当前顺序意味着降级到阈值以下的记录可能不再输出；完整的撤回、降级及通知生命周期仍需后续设计。
+详情不应用摘要去重，不受默认三天限制。所有 Markdown 生成将公告视为数据；摘要表格转义换行和竖线，详情正文引用展示，避免当作命令执行。
 
-## 状态和结果
+## 版本与后果提取
 
-| 文件 | 用途 |
-| --- | --- |
-| `products.json` | 产品 ID、仓库、生态包名、关键词；后续扩展主要自管依赖 |
-| `state.json` | 可重建的采集缓存、各源成功检查点、已检查 CVE 的更新时间索引 |
-| `dedup-history.json` | 通过严重性和产品过滤的内容指纹；包括未输出的旧记录基线，不是投递成功记录 |
-| `*.lock` | 避免并发进程写同一状态或历史 |
+版本提取支持 GHSA vulnerable_version_range/first_patched_version、OSV ranges/events、CVE affected versions、NVD CPE 上下界。保留每条来源、组件、平台和修复分支，不用字符串比较来推断跨分支最高修复版本。无结构化修复信息明确显示未知；支持公告中明确的 Chrome “prior to VERSION”措辞作为带证据的补充。
 
-默认 JSON 输出到 stdout，`--output` 指定文件，完整报告无需持久保存。摘要含产品、编号、等级、各源评分、标题、链接和变化类型；`--details` 附完整证据。另输出源错误、耗时和过滤统计。`--offline` 不联网，但默认仍更新排重历史；只复看使用 `--offline --all`。
+后果标签是保守的文本规则：明确远程执行语句为 RCE，其他代码执行为 Code Execution；另识别 Crash、UAF、DoS、Sandbox Escape 等。否定/不确定语句不作为标签证据。摘要列出证据标签集合，不能保证还原最严重攻击链；详情保留原文供用户或未来 AI 复核。
 
-## 并发和失败
+## 验证
 
-默认 `--jobs 6` 并发执行产品/源任务，CVE 详情 `--workers 8`。NVD 共享限速器；并发不能突破源配额。各源成功才推进自己的检查点，失败保留旧缓存并明确报告，其他任务继续。
-
-GitHub 从 `GH_TOKEN` 或 `GITHUB_TOKEN` 读取凭据；匿名额度耗尽会返回 403，不应视作项目没有公告。NVD 支持 `NVD_API_KEY`。凭据不写入配置，支持标准代理环境变量及 `--proxy`。
-
-退出码：0 为所选源全部成功，1 为部分失败，2 为参数或整体错误。结果可能包含失败源旧缓存，须结合错误信息判断新鲜度。
-
-## 后续扩展与验证
-
-补齐主要自管依赖映射，再接入 AI 处置报告、每日调度及通知投递。投递成功状态须与采集缓存、输出指纹分离，避免“生成过结果”被误当作“已通知”。外部公告只作为数据，不执行其中指令。
-
-运行示例与完整接口约定见 [README](../README.md)。测试入口：`uv run python -m unittest discover -s tests -t . -v`；重点覆盖分页、源自动发现、并发、失败保留检查点、别名合并及过滤开关。
+`make check` 执行单元测试及 McCabe <= 10、认知复杂度 <= 15、MI >= 30。测试包括：三个命令隔离、更新产品/级别范围、二次摘要无输出、只标记实际展示项、别名迁移、输出失败、指定产品/级别详情、版本与标签提取，以及原有来源/分页/失败/连接复用测试。

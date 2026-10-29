@@ -2,7 +2,7 @@ import argparse
 import copy
 import datetime as dt
 import unittest
-from filters import apply_filters
+from advisories.filters import apply_filters
 P=[dict(id='claude',label='Claude Code',keywords=['claude-code'],packages=[],repositories=[])]
 def args(**kw):return argparse.Namespace(**dict(dict(min_severity='critical',history=True,all=False,include_pending=False,days=3),**kw))
 def row(source='ghsa:claude',severity='critical',affected=None):return dict(id='GHSA-x',aliases=[],products=['claude'],severity=severity,fingerprint='a',evidence=[dict(source=source,kind='vulnerability',affected=affected or [],title='Bug')])

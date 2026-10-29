@@ -2,7 +2,7 @@
 import hashlib
 import json
 import re
-from reporting import LEVEL
+from advisories.reporting import LEVEL
 
 def digest(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False,

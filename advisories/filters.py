@@ -1,9 +1,9 @@
 """Independent severity, product identity, and output-history filters."""
 import datetime as dt
-from reporting import compact, LEVEL
+from advisories.reporting import compact, LEVEL
 
 
-from product_identity import product_confirmed
+from advisories.product_identity import product_confirmed
 
 
 def apply_filters(merged, history, args, products):
@@ -30,7 +30,7 @@ def is_recent(row, cutoff, now):
     for e in row.get('evidence', []):
         for key in ('published', 'modified'):
             try:
-                date = dt.datetime.fromisoformat(e.get(key, '').replace('Z', '+00:00'))
+                date = dt.datetime.fromisoformat((e.get(key) or '').replace('Z', '+00:00'))
                 if date.tzinfo is None: date=date.replace(tzinfo=dt.timezone.utc)
                 recent |= cutoff <= date <= now
             except (ValueError, TypeError): pass

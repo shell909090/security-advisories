@@ -1,5 +1,5 @@
 import unittest
-from sources import discover
+from advisories.sources import discover
 
 
 class SourceTests(unittest.TestCase):

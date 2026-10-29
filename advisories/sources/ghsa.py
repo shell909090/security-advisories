@@ -1,4 +1,4 @@
-from source_common import *
+from advisories.source_common import *
 import datetime as dt
 import re
 NAME='ghsa'

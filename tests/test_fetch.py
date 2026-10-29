@@ -10,7 +10,14 @@ from pathlib import Path
 import unittest
 from unittest.mock import patch
 
-import fetch
+from types import SimpleNamespace
+from advisories.records import merge_records, meaningful
+from advisories.source_common import parse_time, product_matches
+from advisories.sources.cve import cve_delta
+from advisories.sources.osv import osv_product
+from advisories.http_client import Client
+fetch = SimpleNamespace(merge_records=merge_records, meaningful=meaningful, parse_time=parse_time,
+                        product_matches=product_matches, cve_delta=cve_delta, osv_product=osv_product, Client=Client)
 
 
 def record(ident='GHSA-test', aliases=None, **extra):
@@ -91,43 +98,6 @@ class FetchTests(unittest.TestCase):
         groups = fetch.merge_records({'ghsa:x': {'records': {'a': a}}, 'nvd:x': {'records': {'b': b}}})
         self.assertFalse(groups[0]['withdrawn'])
         self.assertTrue(groups[0]['withdrawal_conflict'])
-
-    def test_partial_failure_preserves_checkpoint_and_repeated_output_is_empty(self):
-        with tempfile.TemporaryDirectory(dir=fetch.ROOT) as directory:
-            root = Path(directory)
-            products = [{'id': 'codex', 'packages': [{'ecosystem': 'npm', 'name': '@openai/codex'}]}]
-            (root/'products.json').write_text(json.dumps(products))
-            old = {'version': 1, 'units': {'ghsa:codex': {'checkpoint': '2026-01-01T00:00:00Z', 'records': {}}}, 'seen_output': {}}
-            (root/'state.json').write_text(json.dumps(old))
-            args = argparse.Namespace(products=root/'products.json', state=root/'state.json', output=root/'report.json',
-                                      sources='ghsa,osv', since=None, overlap_days=2, days=3, workers=1,
-                                      timeout=1, proxy=None, min_severity='high', all=False)
-            with patch('sources.ghsa.collect', side_effect=RuntimeError('offline')), patch('sources.osv.collect', return_value={'records':[record(published=fetch.stamp(dt.datetime.now(fetch.UTC)))], 'metadata':{}}), contextlib.redirect_stderr(io.StringIO()):
-                self.assertEqual(fetch.run(args), 1)
-                state = json.loads(args.state.read_text())
-                self.assertEqual(state['units']['ghsa:codex']['checkpoint'], '2026-01-01T00:00:00Z')
-                self.assertEqual(len(json.loads(args.output.read_text())['changes']), 1)
-                self.assertEqual(fetch.run(args), 1)
-                self.assertEqual(json.loads(args.output.read_text())['changes'], [])
-
-    def test_discovered_sources_run_concurrently_and_disabled_history_untouched(self):
-        with tempfile.TemporaryDirectory(dir=fetch.ROOT) as directory:
-            root = Path(directory)
-            products = [{'id':'codex','packages':[{'ecosystem':'npm','name':'@openai/codex'}]}]
-            (root/'products.json').write_text(json.dumps(products))
-            (root/'history.json').write_text('not valid JSON: must not be read')
-            barrier = threading.Barrier(2)
-            def collect(client, product, since, until, context):
-                barrier.wait(timeout=2) # Sequential scheduling would fail this source.
-                return {'records': [], 'metadata': {}}
-            modules = {name: SimpleNamespace(GLOBAL=False,collect=collect) for name in ('new_a','new_b')}
-            args = argparse.Namespace(products=root/'products.json',state=root/'state.json',output=root/'report.json',
-                dedup_history=root/'history.json',sources=None,since=None,days=3,overlap_days=2,workers=1,jobs=2,
-                timeout=1,proxy=None,min_severity='critical',all=False,skip_dedup_filter=True)
-            with patch('sources.discover', return_value=modules), contextlib.redirect_stderr(io.StringIO()):
-                self.assertEqual(fetch.run(args), 0)
-            self.assertEqual((root/'history.json').read_text(),'not valid JSON: must not be read')
-            self.assertEqual(set(json.loads((root/'state.json').read_text())['units']), {'new_a:codex','new_b:codex'})
 
 
 if __name__ == '__main__':

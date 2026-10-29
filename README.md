@@ -1,93 +1,91 @@
-# 安全公告抓取
+# 安全公告缓存与产品报告
 
-Python 3.10+，使用 uv 管理环境，目前仅依赖标准库。监测 Hermes Agent、OpenCode、Claude Code、Codex CLI；不采集安装版本、不发送通知。
-
-```bash
-cd ~/var/security-advisories
-uv sync                                  # 创建环境并同步依赖
-uv run python fetch.py                                # 全部已发现的数据源，默认 Critical
-uv run python fetch.py --list-sources
-uv run python fetch.py --sources ghsa,osv,project       # 选择数据源
-uv run python fetch.py --min-severity high             # High + Critical
-uv run python fetch.py --skip-severity-filter          # 跳过严重性过滤
-uv run python fetch.py --skip-product-filter           # 跳过采集范围内的产品确认
-uv run python fetch.py --skip-dedup-filter             # 不读取、不写入排重历史；--all 同义
-uv run python fetch.py --offline --all                 # 只看缓存中的近期结果
-uv run python fetch.py --offline --history --all       # 明确查看历史结果
-uv run python fetch.py --dedup-history another.json    # 使用独立排重历史
-uv run python fetch.py --details --output report.json  # 完整证据，报告可删
-uv run python -m unittest discover -s tests -t . -v
-```
-
-项目配置在 `pyproject.toml`，后续运行依赖用 `uv add 包名` 添加，开发依赖用 `uv add --dev 包名` 添加。按仓库约定，`uv.lock` 与其他 lock 文件一起忽略；本地由 uv 自动生成。`products.json` 同样被忽略，新检出需自行准备产品配置。
-
-## 结构
-
-- `sources/ghsa.py`：GitHub 全局安全公告，准确包名，日期增量。
-- `sources/project.py`：项目自己的 Security Advisories。Release notes 不是漏洞条目，默认不扫描完整 Release 历史；需要时加 `--include-releases`。
-- `sources/osv.py`：按准确包名、无版本查询。规模小，每次重查已收录记录，以捕获延迟入库。
-- `sources/nvd.py`：产品关键词及修改时间查询；共同别名合并为宽关键词（当前四产品只需四个查询），可用配置 nvd_keywords 覆盖。候选可能涉及第三方工具，交给产品过滤确认。
-- `sources/cve.py`：官方滚动 deltaLog，独立检查新增及更新记录。约 30 天覆盖，超过覆盖明确报错。首次默认检查近三天，不下载全库；CVE ID/修改时间缓存避免重叠窗口重复下载。
-- `fetch.py`：自动发现模块、并发调度、调用过滤器、保存采集状态。
-- `cli.py`：命令行参数和进程锁；`http_client.py`：HTTP、重试和限速。
-- `records.py`：别名合并和内容指纹；`product_identity.py`：结构化产品身份确认。
-- `filters.py`：严重性 → 产品确认 → 历史排重。
-- `products.json`：四个产品的包名、仓库、别名，可扩展主要自管依赖。
-
-各源可能按产品查询来限制下载范围；`--skip-product-filter` 只跳过后置确认，不代表从每个源下载全世界全部漏洞。CVE 的无关正文不保存。
-
-## 三层过滤
-
-1. **严重性**：默认 Critical；可改 `--min-severity` 或完全跳过。未知评级不冒充严重漏洞，可用 `--include-pending` 单列待复核线索。
-2. **产品**：确认准确包/仓库来源，或受影响产品/CPE；仅描述里提到关注产品、第三方集成工具、发现者致谢，不足以确认。可关闭。
-3. **排重**：默认 `dedup-history.json`，按 CVE/GHSA/OSV 别名合并后记录内容指纹；重要内容变化再次输出，纯时间戳/独立引用列表变化忽略。可指定另一历史库或完全关闭。此历史代表已输出，不代表通知已送达。
-
-默认首次只报告近 `--days 3` 天发布/更新的记录；已知条目的内容变化也处理。历史梳理需明确 `--history`，已排重记录需再加 `--all`。输出精简字段：产品、等级、CVE/GHSA ID、标题、评分及来源链接；`--details` 才带完整证据。没有 CVE 的真实 GHSA 仍可保留，不伪造编号。
-
-## 并发、状态和失败
-
-默认 `--jobs 6` 个产品/数据源任务并行；CVE 详情另用 `--workers 8` 并行。NVD 请求共享限速器，不能通过并发突破接口配额。每源输出耗时，总耗时及各层过滤数量写入 JSON。
-
-`state.json` 是采集缓存、各源成功进度和 CVE 检查索引；与排重历史分离。失败源不推进进度，其他源继续。`.lock` 防止同时写同一状态/历史。JSON 默认 stdout，报告不长期保存。退出码 0 全部所选源成功，1 部分失败，2 参数或整体错误。
-
-GitHub 建议环境变量 `GITHUB_TOKEN` 或 `GH_TOKEN`，NVD 可选 `NVD_API_KEY`；不把凭据写入文件。支持标准代理环境变量及 `--proxy URL`。CVE 官方日志超过保留窗口会报错，需完成回补后用 `--since ISO时间` 恢复。新版 GitHub 默认 reviewed 包公告；unreviewed 相关线索由 CVE/NVD 补充，不宣称遍历所有未审核 GHSA。
-
-## 增加数据源
-
-在 `sources/` 放一个不以下划线开头的 Python 文件，无需修改 fetch 的名单：
-
-```python
-NAME = 'example'
-GLOBAL = False                 # False：每产品一个任务；True：全局一个任务
-MATCH_BASIS = 'source-candidate' # 精确包/仓库可声明 exact-package / exact-repository
-
-def collect(client, product, since, until, context):
-    return {'records': [], 'metadata': {}}
-```
-
-统一记录字段：`id, aliases, products, title, description, severity, scores, published, modified, url, affected, withdrawn, kind, references`。severity 小写，未知为 `unknown`；kind 为 `vulnerability` 或 `security-release`。日期 ISO8601；products 使用配置 ID。记录只是来源声明，不代表本机可利用。
-
-`client.json()` 支持 GET/POST，`client.paginate_github()` 跟随分页链接。context 包含关注清单、旧源状态、已知 CVE 映射、详情并发数和配置变化标记。metadata 可保存源自有游标，不得覆盖 records/checkpoint/config_hash。源失败应抛异常，不能返回假空结果。`SUPPORTS_FULL_HISTORY=False` 可声明只支持滚动时间窗（如 CVE）。新增源须提供分页、失败及数据转换测试。
-
-## Make 与质量门禁
+Python 3.10+，uv 管理依赖，requests 复用 HTTP 连接。一个入口三个子命令：更新缓存、查看产品摘要、查看漏洞详情。应用代码在 `advisories/`，根目录仅保留入口 `fetch.py`。
 
 ```bash
-make sync        # uv 同步开发依赖
-make test        # 单元测试
-make complexity  # McCabe <= 10，认知复杂度 <= 15
-make mi          # 每个 Python 文件 MI >= 30
-make quality     # 所有静态指标
-make check       # 测试 + 所有静态指标（默认 make 目标）
+uv sync
+
+# 更新所有关注产品，收录 High + Critical；不修改展示历史
+uv run python fetch.py update --min-severity high
+
+# 只更新指定产品；默认最低级别为 Critical
+uv run python fetch.py update --product chrome,uv --min-severity high --days 3
+
+# 离线摘要：默认近 3 天、High + Critical、仅未展示/内容有变化的条目
+uv run python fetch.py summary
+uv run python fetch.py summary --product chrome --min-severity critical --days 7
+
+# 忽略展示历史且不更新历史；--history 取消时间窗口
+uv run python fetch.py summary --all
+uv run python fetch.py summary --history --all
+uv run python fetch.py summary --shown     # 仅已展示，不修改历史
+
+# 指定产品和确切级别，列出缓存内全部漏洞，Markdown 格式
+uv run python fetch.py detail --product chrome --severity critical
+uv run python fetch.py detail --product chrome --severity high --output /tmp/chrome-high.md
+
+make check                               # 测试 + 所有质量门限
 ```
 
-开发依赖由 uv 管理：`mccabe` 计算圈复杂度，`cognitive-complexity` 计算函数认知复杂度，`radon` 计算文件级 MI（包含多行字符串注释）。检查涵盖源码、测试及检查脚本，排除隐藏目录和 Python 缓存。超限打印文件、位置及实际值并以非零状态退出；不使用平均值掩盖单项超限。所有检查使用固定阈值，不对存量代码豁免。
+每个子命令支持 `--products 配置路径`、`--state 缓存路径`、`--output 输出路径`。产品筛选用 `--product 产品ID[,产品ID]`；detail 只能选择一个产品。详细参数用 `uv run python fetch.py 子命令 --help`。
 
-## 扩展关注清单
+## Summary
 
-本地 `products.json` 已包含原有四个 AI 工具及 goimports、golangci-lint、govulncheck、inb、migrate、Trivy、ttyd、Zellij、LiteLLM、Pi Coding Agent、Playwright、Ruff、uv/uvx、Uvicorn、yt-dlp、Chrome、Brave、Firefox。
+按产品展示 Critical/High 数量、受影响版本/组件、公告明确给出的修复版本，以及 RCE、Crash、UAF、Sandbox Escape 等证据标签，不在摘要堆叠漏洞 ID 和 CVSS。
 
-- uvx 是 uv 的命令别名，共用一个产品；Pi 同时查询迁移前后的 npm 包名。
-- inb 对应 `yuzu-hub/inb`，migrate 对应 `golang-migrate/migrate`。
-- Go 按模块查询；模块公告属于产品线索，不代表命令实际使用了受影响代码。
-- `packages: []` 用于没有对应包生态的产品，GHSA/OSV 包查询自动为空；Chrome、Firefox 主要依靠 CVE/NVD，Brave 和 ttyd 另查询项目公告。浏览器厂商公告页面尚无专用采集器，Chromium 漏洞也不会自动推断为 Brave 已受影响。
-- JSON 仍按仓库约定忽略，新增产品清单保存在本地，不随 Git 提交。
+- 数量指本次过滤后实际展示的活跃漏洞，重复编号/别名合并。
+- summary 默认读取并更新 `dedup-history.json`；相同内容第二次运行 stdout 为空。
+- 只在成功输出后标记实际展示的条目；被产品、级别或时间过滤的条目不标记已展示。
+- 内容发生重要变化可再次展示，纯时间戳变化不重复展示。历史按产品和所有漏洞别名记录。
+- `--all` 不读写历史，`--shown` 只读历史，`--dedup-history` 可指定独立历史文件。
+- 版本分支、平台和组件信息尽量保留。不推断“最高版本修复全部漏洞”，缺少修复信息明确显示未知。
+- 后果标签目前仅依据明确公告措辞，未经 AI 分析；UAF 是缺陷类型。没有匹配标签不等于无危害，标签也不代表本机可利用。
+
+## 更新与收录范围
+
+update 决定产品和最低收录级别，summary 只能二次收窄。降低 summary 门槛不会联网补抓，缓存门槛不足会在 stderr 提示重新 update。detail 的 `--severity high` 精确匹配 High，不包含 Critical。
+
+`--days` 默认 3，控制首次或配置变化时的回溯；已有进度时从检查点向前重叠 `--overlap-days 2` 天抓取。`--since` 显式指定开始时间。`--history` 回补支持历史查询的数据源，CVE 官方滚动日志超过覆盖窗口会明确报错，不能自动回补全库。
+
+更新所选产品不会删除其他产品。`state.json` 的同步证据用于合并别名、等级变化和撤回，可能包含未达收录门槛的原始记录；`catalog` 才是 summary/detail 可读取的按产品、级别收录目录。旧格式缓存仍可供 update 增量使用，但需要先运行一次 update 建立目录，显示命令不会擅自导入旧数据。旧版输出历史不等于新版摘要展示历史，首次 summary 会重建其版本。
+
+来源：
+
+- GHSA：准确包名、reviewed、日期增量。
+- 项目公告：GitHub 仓库 Security Advisories；与全局 GHSA 覆盖不完全相同，不默认扫描 release notes。
+- OSV：准确包名、无安装版本查询，重查包历史以捕获延迟收录。
+- NVD：关键词和修改时间；结构化产品信息再确认。
+- CVE：全局滚动 deltaLog，下载变更详情后匹配关注产品。
+
+使用 `--sources ghsa,osv,project,nvd,cve` 选择来源。默认 `--jobs 6`，CVE 详情 `--workers 8`（最大 32）。NVD 共享限速，不靠增加并发绕过配额。失败源保留旧缓存、不推进检查点，报告提示可能过期。
+
+CVE 每 100 条将成功记录原子写入 `<state路径>.cve-progress.json`；部分失败也保存成功结果，下次相同配置跳过未变化的成功项。配置变化会使批次缓存失效；主状态写入成功后清理已完成批次。每线程独立 requests Session 复用连接，采集结束关闭。
+
+GitHub 凭据读取 `GH_TOKEN` 或 `GITHUB_TOKEN`，NVD 可用 `NVD_API_KEY`，均不落盘。支持标准代理环境变量和 `--proxy`。退出码：0 成功、1 更新部分源失败、2 参数/整体错误。
+
+## 文件与开发
+
+- `products.json`：关注产品配置。`packages` 允许空数组，浏览器等依靠 CVE/NVD 或项目公告。
+- `state.json`：同步缓存、成功进度、收录目录。
+- `dedup-history.json`：摘要展示指纹，不是通知投递确认。
+- `advisories/`：CLI、采集调度、过滤/展示、版本/后果提取及 `sources/` 插件。
+- `tests/`：回归测试；`scripts/check_quality.py`：静态门禁。
+
+JSON、lock、Python 缓存和 `.venv/` 按仓库约定忽略；配置需在新检出时自行准备，uv.lock 本地自动生成。产品结构：
+
+```json
+[{"id":"uv","label":"uv / uvx","repositories":["astral-sh/uv"],"packages":[{"ecosystem":"PyPI","name":"uv"}],"keywords":["uv","uvx","astral-sh/uv"],"nvd_keywords":["astral uv"]}]
+```
+
+本地清单包含 Hermes Agent、OpenCode、Claude Code、Codex CLI、goimports、golangci-lint、govulncheck、inb、migrate、Trivy、ttyd、Zellij、LiteLLM、Pi、Playwright、Ruff、uv/uvx、Uvicorn、yt-dlp、Chrome、Brave、Firefox。uvx 与 uv 合并；inb 为 yuzu-hub/inb，migrate 为 golang-migrate/migrate。Pi 同时查询迁移前后的 npm 包名。浏览器厂商公告暂无独立采集器，不自动推断 Chromium 漏洞影响 Brave。
+
+```bash
+make sync          # uv 同步开发依赖
+make test          # 单元测试
+make complexity    # 每函数 McCabe <= 10、认知复杂度 <= 15
+make mi            # 每文件 MI >= 30
+make quality       # 所有静态指标
+make check         # 测试 + 静态指标（默认目标）
+```
+
+检查覆盖源码、测试和检查脚本，排除隐藏目录和 Python 缓存。超限以非零状态退出，不对存量代码豁免。需求和实现设计见 `docs/req.md`、`docs/design.md`。
