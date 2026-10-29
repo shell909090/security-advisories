@@ -1,5 +1,7 @@
 """JSON persistence and selected product configuration."""
 import json
+from .cache_storage import load_cache, save_cache
+from .inspection_storage import pack, unpack, transform_state
 
 
 def atomic_json(path, value):
@@ -24,11 +26,14 @@ def load_products(args):
     return [p for p in products if p['id'] in selected]
 
 
-def load_state(path):
+def load_state(path, with_http=False):
     state = read_json(path, {'version': 1, 'units': {}})
     if state.get('version') != 1:
         raise ValueError('Unsupported state version')
-    return state
+    inline = state.pop('http_cache', None)
+    if with_http:
+        state['http_cache'] = inline if inline is not None else load_cache(path)
+    return transform_state(state, unpack)
 
 
 def emit(text, output):
@@ -37,3 +42,11 @@ def emit(text, output):
         output.write_text(text, encoding='utf-8')
     elif text:
         print(text, end='', flush=True)
+
+
+def save_state(path, state):
+    packed = transform_state(state, pack)
+    entries = packed.pop('http_cache', None)
+    if entries is not None:
+        save_cache(path, entries)
+    atomic_json(path, packed)

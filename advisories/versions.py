@@ -1,17 +1,23 @@
 """Evidence-preserving version extraction; no cross-branch version arithmetic."""
 from .evidence import active_evidence
 import re
+from .version_scope import ownership
 
 
-def version_nodes(value, context=''):
+def version_nodes(value, context='', product=None, matched=False):
     if isinstance(value, dict):
+        scope = ownership(value, product) if product else None
+        if scope is False:
+            return
+        matched = matched or scope is True
         context = ' / '.join(filter(None, [context, label(value)]))
-        yield value, context
+        if product is None or matched:
+            yield value, context
         for child in value.values():
-            yield from version_nodes(child, context)
+            yield from version_nodes(child, context, product, matched)
     elif isinstance(value, list):
         for child in value:
-            yield from version_nodes(child, context)
+            yield from version_nodes(child, context, product, matched)
 
 
 def label(node):
@@ -81,12 +87,14 @@ def node_versions(node):
     return result
 
 
-def evidence_versions(evidence):
+def evidence_versions(evidence, product=None):
     result = []
-    for node, context in version_nodes(evidence.get('affected', [])):
+    for node, context in version_nodes(evidence.get('affected', []), product=product):
         for span, fixed, component in node_versions(node):
             result.append((span, fixed, context or component))
     text = evidence.get('description') or ''
+    if product and product['id'].casefold() != 'chrome':
+        text = ''
     # This explicit product/version sentence states the Chrome fix boundary.
     for match in re.finditer(r'Google Chrome(?: on [^\n]*?)? prior to (\d+\.\d+\.\d+\.\d+)', text):
         version = match.group(1)
@@ -94,9 +102,9 @@ def evidence_versions(evidence):
     return result
 
 
-def version_facts(row):
+def version_facts(row, product=None):
     facts = set()
     for evidence in active_evidence(row):
-        for affected, fixed, component in evidence_versions(evidence):
+        for affected, fixed, component in evidence_versions(evidence, product):
             facts.add((affected, fixed, component, evidence.get('source', 'unknown')))
     return sorted(facts)

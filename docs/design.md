@@ -16,19 +16,20 @@
 
 ## 文件清单及通用约定
 
-所有运行时 JSON 为 UTF-8；写入时缩进2格、保留非 ASCII 字符、结尾换行。时间为 ISO8601，内部生成时间带 UTC `Z` 或 `+00:00`；保留外部时间原格式（NVD 无时区按 UTC 解释）。字典键、产品 ID、漏洞编号和哈希均为字符串。计数为非负整数。未知外部时间可为 null/缺省。严重性为 `critical/high/medium/moderate/low/none/unknown`，moderate 比较时等于 medium。
+所有运行时 JSON 为 UTF-8；普通 JSON 写入时缩进2格、保留非 ASCII 字符、结尾换行。压缩 HTTP 缓存使用紧凑 JSON。时间为 ISO8601，内部生成时间带 UTC `Z` 或 `+00:00`；保留外部时间原格式（NVD 无时区按 UTC 解释）。字典键、产品 ID、漏洞编号和哈希均为字符串。计数为非负整数。未知外部时间可为 null/缺省。严重性为 `critical/high/medium/moderate/low/none/unknown`，moderate 比较时等于 medium。
 
 | 文件 | 格式与生命周期 |
 | --- | --- |
 | `products.json` | 产品对象数组；用户配置 |
 | `state.json` | 主缓存对象，`version:1`；同步状态、收录目录、OSV 详情缓存、最后一次统计 |
+| `<state所在目录>/http-cache.json.gz` | 独立 gzip HTTP 缓存，内部为 `{version:1, entries:{缓存键:缓存项}}`；可删除重建，仅 update 读取 |
 | `<state路径>.cve-progress.json` | CVE 可续传批次对象；每100条原子保存，主状态写入成功后清理成功的 CVE 任务进度 |
-| `dedup-history.json` | `version:2` 摘要展示历史；只记录成功展示 |
-| `<原路径>.lock` | 空/无业务内容的文本文件，进程通过文件描述符 flock 排他锁协调读写；文件存在不等于锁被持有 |
+| `history.json` | `version:2` 摘要展示历史；只记录成功展示 |
+| `<state所在目录>/advisories.lock` | 空/无业务内容的文本文件，进程通过文件描述符 flock 排他锁协调读写；文件存在不等于锁被持有 |
 | `<原路径>.new` | JSON 原子替换的临时文件，与目标 JSON 同格式；失败后可能残留，不作为缓存读取 |
 | `--output` 路径 | update 为文本，summary/detail 为 Markdown，不作为状态回读 |
 
-JSON、lock、Python 字节码和 `.venv/` 被 Git 忽略。`pyproject.toml` 是 uv 项目/依赖配置，`uv.lock` 为 uv 生成的 TOML 锁文件（同样忽略），不是漏洞状态。Makefile 定义开发命令，不保存业务数据。
+JSON、运行时 lock、Python 字节码和 `.venv/` 被 Git 忽略，uv.lock 例外放行。`pyproject.toml` 是 uv 项目/依赖配置，`uv.lock` 为 uv 生成的 TOML 依赖锁文件（纳入版本控制），不是漏洞状态。Makefile 定义开发命令，不保存业务数据。
 
 ## 产品配置对象
 
@@ -232,7 +233,7 @@ summary 直接输出 Markdown 表格，不输出标题或前置说明段落。�
 
 源接口保持 `collect(client,product,since,until,context) -> {records,metadata}`。可声明 `BATCH=True` 并实现 `collect_many(client,contexts,until,cache) -> (按产品ID的结果映射,新共享缓存)`，调度器合并网络请求但独立保存产品 unit。OSV 结果另带 `replace_records:true`。metadata 不允许覆盖 records/checkpoint/config_hash/collection_hash。成功提交只在主调度线程，避免并发修改主状态。
 
-JSON 通过同目录 `.new` 写入后 replace；状态/摘要历史分别原子，跨文件不保证事务。所有命令锁 state，summary 使用历史时还锁历史。HTTP 每工作线程独立 Session，结束关闭；代理/凭据不写入缓存。更新失败仍保存成功源、统计和错误。
+JSON 通过同目录 `.new` 写入后 replace；状态/摘要历史分别原子，跨文件不保证事务。所有命令在读取或写入业务数据前，仅获取状态文件所在目录的 advisories.lock，使用 LOCK_EX | LOCK_NB；冲突立即退出，异常或正常返回均随文件描述符关闭释放，不删除锁文件。summary --all 和 detail 也获取同一个锁；不同状态文件名但相同目录仍互斥。独立目录不得交叉共享业务文件。旧的逐文件 .lock 不再使用。HTTP 每工作线程独立 Session，结束关闭；代理/凭据不写入缓存。更新失败仍保存成功源、统计和错误。
 
 主状态 version:1 的扩展字段向后兼容。旧 unit.config_hash 是旧的全局指纹，不可当新 collection_hash：第一次迁移按回溯窗口重新建立覆盖，此后不因选中列表/等级变化重置。未知旧扩展字段可保留但不参与新逻辑。无 catalog 的旧缓存需先 update；不会由显示命令隐式导入。
 
@@ -254,7 +255,7 @@ Detail 支持互斥的 --days（默认3，正有限数）、--since（ISO 时间
 
 ## HTTP 条件缓存格式
 
-主状态新增可选 http_cache 对象，缺省为空。键为 URL（含编码后的参数）及请求 headers 的稳定 SHA-256；headers 包含认证上下文，只有摘要入键，令牌/完整请求头不持久化。
+HTTP 缓存存于 `<state所在目录>/http-cache.json.gz`，主状态不再包含 http_cache 正文。新文件不存在时兼容读取旧 `<state路径>.http-cache.json.gz`，后续保存只写新名称。同目录的状态共享 HTTP 缓存，所有命令使用同一目录锁，防止并行覆盖；需完全隔离时使用不同目录。旧版内嵌 http_cache 仍可读取，存在时优先于旁文件，下一次成功保存自动迁出。旁文件缺失视为空缓存；损坏或版本不支持时记录 warning 并重新获取，离线 summary/detail 不读取旁文件。键为 URL（含编码后的参数）及请求 headers 的稳定 SHA-256；headers 包含认证上下文，只有摘要入键，令牌/完整请求头不持久化。
 
 每个值为 {source, body, link, etag, last_modified, used_at}：
 
@@ -264,7 +265,7 @@ Detail 支持互斥的 --days（默认3，正有限数）、--since（ISO 时间
 - etag/last_modified：原验证头字符串，可为 null；
 - used_at：本地使用时刻，Unix 秒数（浮点）。
 
-仅缓存 GHSA/项目 GET 和 CVE deltaLog；不缓存 POST、NVD、CVE单条和压缩包。请求优先 If-None-Match，否则 If-Modified-Since。304必须已有完整正文才能复用，分页继续使用保存的 Link。200只有完整解析成功且有验证头才保存；失败源持久化时恢复旧缓存。按 used_at 保留最近512项，不保证按字节限制。主状态原子写入规则不变。
+仅缓存 GHSA/项目 GET 和 CVE deltaLog；不缓存 POST、NVD、CVE单条和压缩包。请求优先 If-None-Match，否则 If-Modified-Since。304必须已有完整正文才能复用，分页继续使用保存的 Link。200只有完整解析成功且有验证头才保存；失败源持久化时恢复旧缓存。按 used_at 保留最近512项，不保证按字节限制。压缩文件通过同目录 `.new` 写入后原子替换，再原子保存主状态。两者不构成跨文件事务：若缓存已更新但主状态提交失败，下次最多复用较新完整 HTTP 响应，业务检查点仍以旧主状态为准，仍须处理响应。压缩写入失败时主状态不提交。旁文件路径及输出冲突在 CLI 校验，所有操作共用目录锁。
 
 项目 unit 新增 full_checked_at（UTC ISO时间）；首次/配置变化/history/间隔7天完整核对，其他轮次 updated 倒序并在记录更新时间早于 since 时停止。完整成功使用 replace_records 替换项目来源快照，增量保留旧记录；缺失/无效更新时间不早停。
 
@@ -294,3 +295,13 @@ unit 新增可选 known_checked_at 对象：键为 CVE ID，值为最近成功�
 - [OSV querybatch](https://google.github.io/osv.dev/post-v1-querybatch/)
 - [NVD API](https://nvd.nist.gov/developers/vulnerabilities)
 - [CVE 官方下载协议](https://github.com/CVEProject/cvelistV5#how-to-download-the-cve-list)
+
+## 摘要版本的产品隔离
+
+摘要提取版本前按结构化归属筛选：GHSA/OSV 包按生态与包名匹配配置（支持生态别名及包名规范化）；CVE 按产品名、别名及厂商匹配；NVD 按 CPE 产品及厂商匹配。已匹配产品节点内的组件、平台和范围事件继承归属，不按扁平标签猜测。明确属于其他产品的子树排除，无法确认归属的范围不进入摘要。Chrome 正文版本提取只用于 Chrome 产品。detail 保留完整来源版本与原始证据以供核查；不修改缓存格式。
+
+## CVE 检查索引共享作用域
+
+磁盘上的 `units.cve.cve_seen_scopes` 为 `{局部引用字符串: {product_id:配置哈希}}`；`cve_seen[ID]` 为 `{modified, checked_at, products_ref:引用字符串}`。相同的整个产品/配置哈希映射只保存一次，引用从 `"0"` 起按本次编码顺序分配，写入时仅保存仍被引用的作用域。不同配置版本、不同产品子集不能共用一个映射。业务内存解码回旧 `products` 映射，不改变 inspected、清理和检查点语义。
+
+进度文件采用同样方式：`seen_scopes` 为引用表，`seen[ID].products_ref` 指向它。引用只在所属主状态或进度文件内有效，加载后再合并，不能直接合并两份磁盘引用。旧版内嵌 products 和更早的时间字符串兼容读取；保存转为共享格式。缺失、非法引用或映射应报错，不能当作已检查。编解码不修改调用者对象，未使用的旧作用域随下一次写入回收。

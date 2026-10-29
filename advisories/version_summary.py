@@ -1,6 +1,5 @@
 """Product-scoped version labels for compact summaries; full evidence stays in detail."""
 import re
-from .product_identity import normalize
 from .versions import version_facts
 from .version_ranges import merge_spans, version
 
@@ -8,9 +7,6 @@ from .version_ranges import merge_spans, version
 def component_label(component, product):
     if component.startswith('cpe:'):
         parts = component.split(':')
-        names = product.get('keywords', []) + [product.get('label', ''), product['id']]
-        if normalize(parts[4]) not in {normalize(name) for name in names}:
-            return None
         platform = parts[10] if len(parts) > 10 else '*'
         return product['id'] + (f' ({platform})' if platform not in ('*', '-') else '')
     return component.replace('（公告正文）', '') or product['id']
@@ -18,7 +14,7 @@ def component_label(component, product):
 
 def facts_for_product(row, product):
     result = set()
-    for span, fixed, component, _ in version_facts(row):
+    for span, fixed, component, _ in version_facts(row, product):
         label = component_label(component, product)
         if label is None:
             continue

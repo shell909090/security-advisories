@@ -36,7 +36,7 @@ make check                               # 测试 + 所有质量门限
 按产品展示 Critical/High 数量、受影响版本/组件、公告明确给出的修复版本，以及 RCE、Crash、UAF、Sandbox Escape 等证据标签，不在摘要堆叠漏洞 ID 和 CVSS。
 
 - 数量指本次过滤后实际展示的活跃漏洞，重复编号/别名合并。
-- summary 默认读取并更新 `dedup-history.json`；相同内容第二次运行 stdout 为空。
+- summary 默认读取并更新 `history.json`；相同内容第二次运行 stdout 为空。
 - 只在成功输出后标记实际展示的条目；被产品、级别或时间过滤的条目不标记已展示。
 - 内容发生重要变化可再次展示，纯时间戳变化不重复展示。历史按产品和所有漏洞别名记录。
 - `--all` 不读写历史，`--shown` 只读历史，`--dedup-history` 可指定独立历史文件。
@@ -69,11 +69,11 @@ GitHub 凭据读取 `GH_TOKEN` 或 `GITHUB_TOKEN`，NVD 可用 `NVD_API_KEY`，�
 
 - `products.json`：关注产品配置。`packages` 允许空数组，浏览器等依靠 CVE/NVD 或项目公告。
 - `state.json`：同步缓存、成功进度、收录目录。
-- `dedup-history.json`：摘要展示指纹，不是通知投递确认。
+- `history.json`：摘要展示指纹，不是通知投递确认。
 - `advisories/`：CLI、采集调度、过滤/展示、版本/后果提取及 `sources/` 插件。
 - `tests/`：回归测试；`scripts/check_quality.py`：静态门禁。
 
-JSON、lock、Python 缓存和 `.venv/` 按仓库约定忽略；配置需在新检出时自行准备，uv.lock 本地自动生成。产品结构：
+JSON、运行时 lock、Python 缓存和 `.venv/` 按仓库约定忽略；配置需在新检出时自行准备，uv.lock 纳入版本控制。产品结构：
 
 ```json
 [{"id":"uv","label":"uv / uvx","repositories":["astral-sh/uv"],"packages":[{"ecosystem":"PyPI","name":"uv"}],"keywords":["uv","uvx","astral-sh/uv"],"nvd_keywords":["astral uv"]}]
@@ -114,3 +114,7 @@ CVE 优先启动，详情默认8并发；GHSA+项目公告共用串行通道，N
 GHSA/项目公告及CVE日志支持持久化ETag条件请求；项目公告按更新时间倒序早停，每7天完整核对。CVE大批量时尝试当天压缩增量包，缺失或版本不符的记录回退单条下载；可用 --cve-bundle off 禁用。压缩包不会绕过日志历史覆盖限制。剩余优化及验收条件见 docs/tasks.md。
 
 NVD 对已有记录每7天按 CVE ID 批量复核（每批最多100条），不依赖产品关键词。本轮已查询到的记录不重复抓取；失败或缺项保留旧缓存并报告可能过期。新检出或旧缓存迁移后的首次更新可能多出复核请求。
+
+HTTP 条件缓存独立保存在 `<state所在目录>/http-cache.json.gz`，仅 update 读取；缺失或损坏会重新获取。旧 state.json 内嵌缓存在下次 update 保存时自动迁移。CVE 检查进度在磁盘上共享产品配置映射，兼容旧数据；summary/detail 不需要读取压缩 HTTP 缓存。备份业务状态时保留 state.json 和未完成的 `.cve-progress.json`，HTTP 旁文件可选。
+
+同一状态目录的所有命令共用 `advisories.lock`，冲突时立即报错退出。该锁不影响 update 内部的通道并发；不同目录独立运行时，不要交叉共享展示历史等业务文件。

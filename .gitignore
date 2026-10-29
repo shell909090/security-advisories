@@ -1,5 +1,10 @@
 *.json
 *.lock
+!uv.lock
 __pycache__/
 *.py[cod]
 .venv/
+*.http-cache.json.gz
+*.http-cache.json.gz.new
+http-cache.json.gz
+http-cache.json.gz.new

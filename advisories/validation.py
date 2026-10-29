@@ -1,5 +1,7 @@
 """Reject unsafe file collisions and invalid command ranges before running."""
 import math
+from .cache_storage import cache_path
+from .locking import lock_path
 
 
 def validate_update(parser, args):
@@ -18,7 +20,8 @@ def validate(parser, args):
         validate_update(parser, args)
     if args.command == 'detail' and (not args.product or ',' in args.product):
         parser.error('detail requires exactly one --product')
-    paths = [args.state, args.products, args.state.with_name(args.state.name + '.cve-progress.json')]
+    paths = [args.state, args.products, lock_path(args.state), cache_path(args.state),
+             cache_path(args.state).with_name(cache_path(args.state).name + '.new'), args.state.with_name(args.state.name + '.cve-progress.json')]
     history = getattr(args, 'dedup_history', None)
     if history:
         paths.append(history)

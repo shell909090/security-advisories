@@ -35,7 +35,7 @@ def summary_options(parser):
     parser.add_argument('--min-severity', choices=LEVELS, default='high')
     parser.add_argument('--days', type=float, default=3)
     parser.add_argument('--history', action='store_true', help='Remove time filter')
-    parser.add_argument('--dedup-history', type=Path, default=ROOT / 'dedup-history.json')
+    parser.add_argument('--dedup-history', type=Path, default=ROOT / 'history.json')
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument('--all', action='store_true', help='Ignore history; do not update it')
     mode.add_argument('--shown', action='store_true', help='Only previously shown; do not update history')

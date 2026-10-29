@@ -1,6 +1,7 @@
 """Atomic, configuration-scoped CVE progress, separate from successful checkpoints."""
 import json
 from pathlib import Path
+from .inspection_storage import pack, unpack
 
 
 class CveProgress:
@@ -12,12 +13,12 @@ class CveProgress:
         if not self.path.exists():
             return {}
         data = json.loads(self.path.read_text())
-        return data if data.get('config_hash') == self.config_hash else {}
+        return unpack(data, 'seen') if data.get('config_hash') == self.config_hash else {}
 
     def save(self, records, seen):
         from advisories.storage import atomic_json
-        atomic_json(self.path, {'config_hash': self.config_hash,
-                               'records': list({row['id']: row for row in records}.values()), 'seen': seen})
+        atomic_json(self.path, pack({'config_hash': self.config_hash,
+                               'records': list({row['id']: row for row in records}.values()), 'seen': seen}, 'seen'))
 
     def clear(self):
         self.path.unlink(missing_ok=True)

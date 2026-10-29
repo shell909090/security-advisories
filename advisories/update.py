@@ -12,7 +12,7 @@ from .product_identity import product_confirmed
 from .reporting import LEVEL
 from .progress import clear_completed
 from .sources import discover
-from .storage import atomic_json, emit, load_products, load_state
+from .storage import save_state, emit, load_products, load_state
 
 
 def admitted(row, product, minimum):
@@ -34,7 +34,7 @@ def refresh_catalog(state, products, minimum, errors, until):
 
 def run(args):
     products = load_products(args)
-    state = load_state(args.state)
+    state = load_state(args.state, with_http=True)
     config_hash = cve_scope(products)
     until = dt.datetime.now(dt.timezone.utc)
     available = discover()
@@ -56,7 +56,7 @@ def run(args):
                             'errors': errors, 'elapsed_seconds': round(time.monotonic() - started, 2)}
     failed = {error['source'].split(':')[0] for error in errors}
     state['http_cache'] = client.cache.snapshot(previous_http, failed)
-    atomic_json(args.state, state)
+    save_state(args.state, state)
     clear_completed(args.state, config_hash, completed)
     count = sum(len(state['catalog'][p['id']]['records']) for p in products)
     emit(f'Updated {len(products)} products; {count} admitted records; '
