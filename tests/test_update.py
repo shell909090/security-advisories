@@ -26,7 +26,7 @@ class UpdateTests(unittest.TestCase):
         history = self.root / 'history.json'
         history.write_text('do not read or write')
         with patch('advisories.update.discover', return_value={'mock': module(self.collect)}):
-            self.assertEqual(command(self.root, 'update', '--product', 'one')[0], 0)
+            self.assertEqual(command(self.root, 'update', '--product', 'one', '--min-severity', 'critical')[0], 0)
             state = json.loads((self.root / 'state.json').read_text())
             self.assertEqual(state['catalog']['one']['records'], [])
             self.assertNotIn('two', state['catalog'])
@@ -86,11 +86,11 @@ class UpdateTests(unittest.TestCase):
         def request(client, url, **kwargs):
             return fake.json(url, **kwargs)
         with patch('advisories.update.discover', return_value={'osv': osv}), patch.object(Client, 'json', request):
-            self.assertEqual(command(self.root, 'update', '--product', 'one')[0], 0)
+            self.assertEqual(command(self.root, 'update', '--product', 'one', '--min-severity', 'critical')[0], 0)
         old = json.loads((self.root / 'state.json').read_text())
         fake = Responses([{'results': [{'vulns': [{'id': 'GHSA-one', 'modified': 'b'}]}]}, RuntimeError('failure')])
         with patch('advisories.update.discover', return_value={'osv': osv}), patch.object(Client, 'json', request):
-            self.assertEqual(command(self.root, 'update', '--product', 'one')[0], 1)
+            self.assertEqual(command(self.root, 'update', '--product', 'one', '--min-severity', 'critical')[0], 1)
         new = json.loads((self.root / 'state.json').read_text())
         self.assertEqual(new['units'], old['units'])
         self.assertEqual(new['source_caches'], old['source_caches'])

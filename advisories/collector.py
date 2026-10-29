@@ -2,7 +2,7 @@
 import concurrent.futures
 import datetime as dt
 from pathlib import Path
-import sys
+import logging
 import time
 from .source_common import stamp
 from .checkpoints import identity, window, cve_scope
@@ -51,10 +51,10 @@ def execute_jobs(args, jobs, collect, state, completed, errors):
                 state['units'].update(updates)
                 state.setdefault('source_caches', {}).update(caches)
                 completed.append(stats)
-                print(f'Done {key}: {stats["seconds"]}s', file=sys.stderr, flush=True)
+                logging.getLogger(__name__).info(f'Done {key}: {stats["seconds"]}s')
             except Exception as exc:
                 errors.append({'source': key, 'error': str(exc)})
-                print(f'FAILED {key}: {exc}', file=sys.stderr, flush=True)
+                logging.getLogger(__name__).error(f'FAILED {key}: {exc}')
 
 
 def finalized(key, result, old, module, fingerprint, until, client):
@@ -99,7 +99,7 @@ def collect_job(job, args, state, until, available, client, products, known):
     source, product, key, old = job
     began = time.monotonic()
     client.metrics.add(source)
-    print(f'Fetching {key}', file=sys.stderr, flush=True)
+    logging.getLogger(__name__).info(f'Fetching {key}')
     if isinstance(product, list):
         updates, caches = collect_batch(source, product, args, state, until, available[source], client)
     else:

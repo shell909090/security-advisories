@@ -1,4 +1,6 @@
 """Offline display orchestration with post-output history persistence."""
+import datetime as dt
+from .filters import is_recent
 from . import detail as detail_format
 from . import summary as summary_format
 from .selection import catalog_rows, read_history, remember, select_summary
@@ -18,7 +20,10 @@ def summary(args):
 
 def detail(args):
     selected = [(p, row) for p, row in catalog_rows(args) if row['severity'] == args.severity]
-    rows = [row for _, row in selected]
+    now = dt.datetime.now(dt.timezone.utc)
+    cutoff = args.since or now - dt.timedelta(days=args.days)
+    rows = [row for _, row in selected if args.history or is_recent(row, cutoff, now)]
     label = selected[0][0].get('label', args.product) if selected else args.product
-    emit(detail_format.render(label, args.severity, rows), args.output)
+    period = '全部历史' if args.history else f'{cutoff.isoformat()} 至 {now.isoformat()}'
+    emit(detail_format.render(label, args.severity, rows, period), args.output)
     return 0

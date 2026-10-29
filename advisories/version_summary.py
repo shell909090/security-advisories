@@ -2,6 +2,7 @@
 import re
 from .product_identity import normalize
 from .versions import version_facts
+from .version_ranges import merge_spans, version
 
 
 def component_label(component, product):
@@ -22,19 +23,37 @@ def facts_for_product(row, product):
         if label is None:
             continue
         span = re.sub(r'([<>=]+)\s*', r'\1 ', span)
-        result.add((span, fixed, label))
+        result.add((span, fixed, label.casefold()))
     return result
 
 
 def summarize(rows, product):
-    affected, fixed = set(), set()
+    affected, fixed = {}, {}
     missing = 0
     for row in rows:
         facts = facts_for_product(row, product)
-        affected.update(f'{component}: {span}' for span, _, component in facts)
-        fixed.update(f'{component}: {fix}' for _, fix, component in facts if fix != '未知')
+        for span, _, component in facts:
+            affected.setdefault(component, set()).add(span)
+        for _, fix, component in facts:
+            if fix != '未知':
+                fixed.setdefault(component, set()).add(fix)
         missing += not any(fix != '未知' for _, fix, _ in facts)
-    fixes = '; '.join(sorted(fixed)) or '未知/待核实'
+    fixes = render_groups(fixed, product['id'].casefold() == 'chrome')
     if missing:
         fixes += f'；{missing} 条未提供明确修复版本，不能保证全部修复'
-    return '; '.join(sorted(affected)) or '未知/待核实', fixes
+    return render_groups(affected), fixes
+
+
+def render_groups(groups, cumulative=False):
+    labels = [f'{component}: {span}' for component, spans in sorted(groups.items())
+              for span in (merge_fixes(spans) if cumulative else merge_spans(spans))]
+    return '; '.join(labels) or '未知/待核实'
+
+
+def merge_fixes(spans):
+    """Chrome stable releases accumulate fixes; opaque branch expressions stay separate."""
+    numeric = {span for span in spans if re.fullmatch(r'\d+(?:\.\d+)*', span)}
+    remaining = set(spans) - numeric
+    if numeric:
+        remaining.add(max(numeric, key=lambda text: (version(text), len(text), text)))
+    return merge_spans(remaining)

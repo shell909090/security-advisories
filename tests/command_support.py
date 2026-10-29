@@ -3,6 +3,8 @@ import contextlib
 import datetime as dt
 import io
 import json
+import logging
+from unittest.mock import patch
 from pathlib import Path
 from advisories.cli import main
 
@@ -19,7 +21,9 @@ def command(root, name, *extra):
         args += ['--dedup-history', str(root / 'history.json')]
     stdout, stderr = io.StringIO(), io.StringIO()
     with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
-        code = main(args + list(extra))
+        handler = logging.StreamHandler(stderr)
+        with patch.object(logging.getLogger(), 'handlers', [handler]):
+            code = main(args + list(extra))
     return code, stdout.getvalue(), stderr.getvalue()
 
 

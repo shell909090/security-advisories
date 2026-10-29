@@ -1,6 +1,6 @@
 """Collect sources and maintain the product-scoped admission catalog."""
 import datetime as dt
-import sys
+import logging
 import time
 from functools import partial
 from .collector import collect_job, collection_jobs, execute_jobs, known_cves
@@ -57,7 +57,7 @@ def run(args):
     emit(f'Updated {len(products)} products; {count} admitted records; '
          f'{len(errors)} source failures; {time.monotonic() - started:.2f}s\n', args.output)
     from .statistics import render_statistics
-    print(render_statistics(state['last_update']['sources']), file=sys.stderr)
+    logging.getLogger(__name__).info(render_statistics(state['last_update']['sources']))
     for error in errors:
-        print(f"WARNING {error['source']}: {error['error']}", file=sys.stderr)
+        logging.getLogger(__name__).warning(f"{error['source']}: {error['error']}")
     return int(bool(errors))

@@ -1,6 +1,6 @@
 """Offline catalog selection and alias-aware, product-scoped display history."""
 import datetime as dt
-import sys
+import logging
 from .filters import is_recent
 from .reporting import LEVEL
 from .records import digest, meaningful
@@ -16,7 +16,7 @@ def catalog_rows(args):
     for product in products:
         entry = state['catalog'].get(product['id'])
         if entry is None:
-            print(f"WARNING {product['id']}: not collected; run update", file=sys.stderr)
+            logging.getLogger(__name__).warning(f"{product['id']}: not collected; run update")
             continue
         warn_coverage(args, product, entry)
         result.extend((product, row) for row in entry['records'] if not row.get('withdrawn'))
@@ -26,10 +26,10 @@ def catalog_rows(args):
 def warn_coverage(args, product, entry):
     minimum = getattr(args, 'min_severity', getattr(args, 'severity', 'critical'))
     if LEVEL[minimum] < LEVEL[entry['min_severity']]:
-        print(f"WARNING {product['id']}: cache collected at {entry['min_severity']}; "
-              f"run update --min-severity {minimum} for wider coverage", file=sys.stderr)
+        logging.getLogger(__name__).warning(f"{product['id']}: cache collected at {entry['min_severity']}; "
+              f"run update --min-severity {minimum} for wider coverage")
     if entry.get('errors'):
-        print(f"WARNING {product['id']}: cached update had source failures; coverage may be stale", file=sys.stderr)
+        logging.getLogger(__name__).warning(f"{product['id']}: cached update had source failures; coverage may be stale")
 
 
 def read_history(args):

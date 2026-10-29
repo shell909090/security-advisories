@@ -8,7 +8,7 @@ uv sync
 # 更新所有关注产品，收录 High + Critical；不修改展示历史
 uv run python main.py update --min-severity high
 
-# 只更新指定产品；默认最低级别为 Critical
+# 只更新指定产品；默认最低级别为 High（包含 Critical）
 uv run python main.py update --product chrome,uv --min-severity high --days 3
 
 # 离线摘要：默认近 3 天、High + Critical、仅未展示/内容有变化的条目
@@ -20,8 +20,10 @@ uv run python main.py summary --all
 uv run python main.py summary --history --all
 uv run python main.py summary --shown     # 仅已展示，不修改历史
 
-# 指定产品和确切级别，列出缓存内全部漏洞，Markdown 格式
+# 指定产品和确切级别，默认近3天发布或更新，Markdown 格式
 uv run python main.py detail --product chrome --severity critical
+uv run python main.py detail --product chrome --severity high --days 7
+uv run python main.py detail --product chrome --severity high --history # 全部历史
 uv run python main.py detail --product chrome --severity high --output /tmp/chrome-high.md
 
 make check                               # 测试 + 所有质量门限
@@ -99,3 +101,7 @@ CVE 已检查索引保存 modified、checked_at、products；清理依据本地�
 每轮 stderr 输出每源 requests、response_bytes、retries、http_errors、cache_hits、not_modified、new/changed/unchanged/removed，并保存到 `state.json.last_update`。response_bytes 为解压后的 HTTP 正文字节，不是线路流量；cache_hits 是省略详情请求的次数，不是连接池复用。记录变化数按来源产品记录计，共享 ID 的 HTTP 请求只计实际次数。HTTP ETag 条件缓存尚未实现，not_modified 正常为0。
 
 全部本地格式及兼容规则见 [设计文档](docs/design.md)。
+
+日志统一通过 logging 默认写 stderr，stdout 保留命令结果，便于管道处理。摘要在同一产品、同一组件/平台内合并受影响范围和公告修复版本，保留空隙及无法解释的表达式；不跨组件合并，也不推断最高修复版本能解决全部漏洞。
+
+Chrome 的组件名忽略大小写，同一组件/平台的数字修复版本按稳定版本累计修复策略汇总为最高升级目标。该策略当前仅用于 Chrome，不自动推广到其他产品；缺失修复信息仍保留提示。

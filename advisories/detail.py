@@ -35,9 +35,9 @@ def render_row(index, row):
     return lines
 
 
-def render(product, severity, rows):
+def render(product, severity, rows, period='全部历史'):
     lines = [f"# {cell(product)} / {severity}：{len(rows)} 个漏洞", '',
-             '缓存内全部匹配条目；不受摘要时间窗口或展示历史限制。', '']
+             f'时间范围：{period}（按发布时间或更新时间）；不受展示历史限制。', '']
     for index, row in enumerate(rows, 1):
         lines.extend(render_row(index, row))
     return '\n'.join(lines) + '\n'

@@ -18,14 +18,18 @@ class CommandTests(unittest.TestCase):
                             record('GHSA-old', date='2020-01-01T00:00:00Z')])
         code, text, _ = command(self.root, 'summary')
         self.assertEqual(code, 0)
-        self.assertIn('| ONE | 1 | 1 | 2 |', text)
+        self.assertIn('| ONE | 1 | 1 |', text)
+        self.assertNotIn('总数', text)
+        self.assertEqual(len(text.splitlines()[-1].split('|')), 8)
         self.assertIn('2.0', text)
         self.assertNotIn('GHSA-', text)
         self.assertEqual(command(self.root, 'summary')[1], '')
         history = (self.root / 'history.json').read_bytes()
         code, text, _ = command(self.root, 'detail', '--product', 'one', '--severity', 'critical')
         self.assertEqual(code, 0)
-        self.assertIn('GHSA-old', text)
+        self.assertNotIn('GHSA-old', text)
+        full = command(self.root, 'detail', '--product', 'one', '--severity', 'critical', '--history')[1]
+        self.assertIn('GHSA-old', full)
         self.assertIn('GHSA-test', text)
         self.assertNotIn('GHSA-high', text)
         self.assertEqual((self.root / 'history.json').read_bytes(), history)
@@ -75,3 +79,7 @@ class CommandTests(unittest.TestCase):
         catalog(self.root, [row])
         self.assertEqual(command(self.root, 'summary')[:2], (0, ''))
         self.assertIn('| ONE |', command(self.root, 'summary', '--history')[1])
+
+    def test_update_defaults_to_high(self):
+        from advisories.cli import build_parser
+        self.assertEqual(build_parser().parse_args(['update']).min_severity, 'high')

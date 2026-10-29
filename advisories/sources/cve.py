@@ -2,7 +2,7 @@ from advisories.source_common import *
 import datetime as dt
 import re
 import concurrent.futures
-import sys
+import logging
 from advisories.cve_index import retain_seen, inspected, mark_seen, selected_hashes
 from advisories.metrics import cache_hit
 NAME="cve"
@@ -40,7 +40,7 @@ def cve_delta(client, products, since, until, previous_seen, previous_records, w
     seen = retain_seen(previous_seen, oldest, until)
     pending = [entry for entry in entries.values() if not inspected(seen, entry, scopes)]
     cache_hit(client, len(entries) - len(pending))
-    print(f'cve: {len(pending)} changed records to inspect', file=sys.stderr, flush=True)
+    logging.getLogger(__name__).info(f'cve: {len(pending)} changed records to inspect')
     records = list(cached.get('records', []))
     def fetch(entry):
         # Construct trusted raw URL; do not fetch URLs supplied inside vulnerability prose.
@@ -93,7 +93,7 @@ def download_batches(fetch, pending, workers, records, seen, progress, scopes=No
             error = consume_batch(executor, fetch, batch, records, seen, scopes or {}, now or dt.datetime.now(dt.timezone.utc))
             if progress:
                 progress.save(records, seen)
-            print(f'cve: {start + len(batch)}/{len(pending)} inspected', file=sys.stderr, flush=True)
+            logging.getLogger(__name__).info(f'cve: {start + len(batch)}/{len(pending)} inspected')
             if error:
                 raise error
 
