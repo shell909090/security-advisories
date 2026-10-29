@@ -57,7 +57,7 @@ class UpdateTests(unittest.TestCase):
         def collect(*args):
             barrier.wait(timeout=2)
             return {'records': [], 'metadata': {}}
-        with patch('advisories.update.discover', return_value={'mock': module(collect)}):
+        with patch('advisories.update.discover', return_value={'mock': module(collect), 'other': module(collect)}):
             self.assertEqual(command(self.root, 'update', '--jobs', '2')[0], 0)
 
     def test_subset_and_threshold_keep_sync_checkpoint(self):

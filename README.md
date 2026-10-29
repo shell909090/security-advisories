@@ -98,10 +98,19 @@ make check         # 测试 + 静态指标（默认目标）
 
 CVE 已检查索引保存 modified、checked_at、products；清理依据本地成功检查时间，避免延迟入库的旧公告反复下载。OSV 共享索引/原始详情缓存位于 `state.json.source_caches.osv`。
 
-每轮 stderr 输出每源 requests、response_bytes、retries、http_errors、cache_hits、not_modified、new/changed/unchanged/removed，并保存到 `state.json.last_update`。response_bytes 为解压后的 HTTP 正文字节，不是线路流量；cache_hits 是省略详情请求的次数，不是连接池复用。记录变化数按来源产品记录计，共享 ID 的 HTTP 请求只计实际次数。HTTP ETag 条件缓存尚未实现，not_modified 正常为0。
+每轮 stderr 输出每源 requests、response_bytes、retries、http_errors、cache_hits、not_modified、new/changed/unchanged/removed，并保存到 `state.json.last_update`。response_bytes 为解压后的 HTTP 正文字节，不是线路流量；cache_hits 是省略详情请求的次数，不是连接池复用。记录变化数按来源产品记录计，共享 ID 的 HTTP 请求只计实际次数。HTTP 条件缓存的304单独计入 not_modified。
 
 全部本地格式及兼容规则见 [设计文档](docs/design.md)。
 
 日志统一通过 logging 默认写 stderr，stdout 保留命令结果，便于管道处理。摘要在同一产品、同一组件/平台内合并受影响范围和公告修复版本，保留空隙及无法解释的表达式；不跨组件合并，也不推断最高修复版本能解决全部漏洞。
 
 Chrome 的组件名忽略大小写，同一组件/平台的数字修复版本按稳定版本累计修复策略汇总为最高升级目标。该策略当前仅用于 Chrome，不自动推广到其他产品；缺失修复信息仍保留提示。
+
+
+## 通道与增量加速
+
+CVE 优先启动，详情默认8并发；GHSA+项目公告共用串行通道，NVD和OSV各自串行，通道之间并行。--jobs限制外层并发，--workers控制CVE详情并发。限流响应按服务等待，不阻塞其他服务。
+
+GHSA/项目公告及CVE日志支持持久化ETag条件请求；项目公告按更新时间倒序早停，每7天完整核对。CVE大批量时尝试当天压缩增量包，缺失或版本不符的记录回退单条下载；可用 --cve-bundle off 禁用。压缩包不会绕过日志历史覆盖限制。剩余优化及验收条件见 docs/tasks.md。
+
+NVD 对已有记录每7天按 CVE ID 批量复核（每批最多100条），不依赖产品关键词。本轮已查询到的记录不重复抓取；失败或缺项保留旧缓存并报告可能过期。新检出或旧缓存迁移后的首次更新可能多出复核请求。

@@ -1,6 +1,7 @@
 from advisories.source_common import *
 import datetime as dt
 import re
+from advisories.project_sync import older_than, collect_project
 NAME='project'
 GLOBAL=False
 SECURITY = re.compile(r'\b(?:CVE-\d{4}-\d+|GHSA-[\w-]+|vulnerabilit\w*|remote code execution|arbitrary code execution|sandbox (?:escape|bypass)|security (?:fix|patch|advisory)|authentication bypass|credential (?:theft|leak))\b', re.I)
@@ -8,7 +9,9 @@ SECURITY = re.compile(r'\b(?:CVE-\d{4}-\d+|GHSA-[\w-]+|vulnerabilit\w*|remote co
 def github_project(client, product, since=None, until=None):
     for repo in product['repositories']:
         root='https://api.github.com/repos/'+repo
-        for a in client.paginate_github(root+'/security-advisories',{'per_page':100}):
+        for a in client.paginate_github(root+'/security-advisories',{'per_page':100, 'sort':'updated', 'direction':'desc'}):
+            if older_than(a, since):
+                break
             yield gh_record(a,product)
         if not getattr(client,'include_releases',False):
             continue
@@ -16,7 +19,7 @@ def github_project(client, product, since=None, until=None):
 
 
 def collect(client, product, since, until, context):
-    return {"records": list(github_project(client, product, since, until)), "metadata": {}}
+    return collect_project(github_project, client, product, since, until, context)
 
 MATCH_BASIS = 'exact-repository'
 

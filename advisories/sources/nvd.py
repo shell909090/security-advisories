@@ -1,6 +1,7 @@
 from advisories.source_common import *
 import datetime as dt
 import re
+from advisories.nvd_review import review
 NAME='nvd'
 GLOBAL=False
 
@@ -36,7 +37,8 @@ def nvd_product(client, product, since=None, until=None):
 
 
 def collect(client, product, since, until, context):
-    return {"records": list(nvd_product(client, product, since, until)), "metadata": {}}
+    rows = list(nvd_product(client, product, since, until))
+    return review(client, product, rows, context.get('old', {}), until, nvd_record)
 
 MATCH_BASIS = 'keyword-candidate'
 

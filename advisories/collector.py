@@ -1,5 +1,5 @@
 """Concurrent source scheduling with independent product and batch checkpoints."""
-import concurrent.futures
+from .scheduling import completed_jobs
 import datetime as dt
 from pathlib import Path
 import logging
@@ -42,20 +42,16 @@ def collection_jobs(args, available, products, state):
 
 
 def execute_jobs(args, jobs, collect, state, completed, errors):
-    with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as executor:
-        futures = {executor.submit(collect, job): job[2] for job in jobs}
-        for future in concurrent.futures.as_completed(futures):
-            key = futures[future]
-            try:
-                updates, caches, stats = future.result()
-                state['units'].update(updates)
-                state.setdefault('source_caches', {}).update(caches)
-                completed.append(stats)
-                logging.getLogger(__name__).info(f'Done {key}: {stats["seconds"]}s')
-            except Exception as exc:
-                errors.append({'source': key, 'error': str(exc)})
-                logging.getLogger(__name__).error(f'FAILED {key}: {exc}')
-
+    for key, future in completed_jobs(jobs, collect, args.jobs):
+        try:
+            updates, caches, stats = future.result()
+            state['units'].update(updates)
+            state.setdefault('source_caches', {}).update(caches)
+            completed.append(stats)
+            logging.getLogger(__name__).info(f'Done {key}: {stats["seconds"]}s')
+        except Exception as exc:
+            errors.append({'source': key, 'error': str(exc)})
+            logging.getLogger(__name__).error(f'FAILED {key}: {exc}')
 
 def finalized(key, result, old, module, fingerprint, until, client):
     rows, metadata, records = normalize_result(result, old, module)
@@ -87,7 +83,7 @@ def collect_single(job, args, state, until, module, client, products, known):
         since = cve_window(args, old, products, until)
     result = module.collect(client.for_source(source), product, since, until, {
         'products': products, 'old': old, 'known': known, 'workers': args.workers,
-        'config_changed': changed, 'progress': CveProgress(args.state, fingerprint)})
+        'config_changed': changed, 'bundles': getattr(args, 'cve_bundle', 'auto') == 'auto', 'progress': CveProgress(args.state, fingerprint)})
     new = finalized(key, result, old, module, fingerprint, until, client)
     if source == 'cve':
         new['coverage'] = updated_coverage(old, products, until)

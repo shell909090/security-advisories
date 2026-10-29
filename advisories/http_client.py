@@ -8,12 +8,19 @@ import urllib.error
 import urllib.parse
 import requests
 from .metrics import Metrics, SourceClient
+from .rate_limits import Cooldowns
+from .http_retry import request
+from .binary_download import download
+from .http_cache import HttpCache
 
 class Client:
     def __init__(self, timeout=30, proxy=None):
         self.metrics = Metrics()
+        self.cooldowns = Cooldowns()
+        self.cache = HttpCache()
         self.timeout = timeout
         self.proxy = proxy
+        self.github_lock = threading.Lock()
         self.nvd_lock = threading.Lock()
         self.nvd_last = 0.0
         self.local = threading.local()
@@ -40,6 +47,7 @@ class Client:
         return host, headers, body
 
     def throttle(self, host):
+        self.cooldowns.wait(host)
         if host == 'services.nvd.nist.gov':
             with self.nvd_lock:
                 interval = 0.7 if os.environ.get('NVD_API_KEY') else 6.2
@@ -50,21 +58,10 @@ class Client:
         if params:
             url += ('&' if '?' in url else '?') + urllib.parse.urlencode(params, doseq=True)
         host, headers, body = self.request_parts(url, data)
-        for attempt in range(3):
-            self.metrics.add(source, retries=int(attempt > 0))
-            self.throttle(host)
-            try:
-                return self.open_json(url, body, headers, with_link, source)
-            except urllib.error.HTTPError as exc:
-                if attempt < 2 and exc.code in (429, 500, 502, 503, 504):
-                    time.sleep(min(30, 2 ** (attempt + 1)))
-                    continue
-                raise RuntimeError(f'HTTP {exc.code}: {host}{urllib.parse.urlparse(url).path}') from None
-            except (urllib.error.URLError, TimeoutError) as exc:
-                if attempt < 2:
-                    time.sleep(2 ** attempt)
-                    continue
-                raise RuntimeError(f'Network failure: {host} ({type(exc).__name__})') from None
+        return request(self, url, source, lambda: self.open_json(url, body, headers, with_link, source))
+
+    def bytes(self, url, source='unscoped', limit=16 * 1024 * 1024):
+        return request(self, url, source, lambda: download(self, url, source, limit))
 
     def paginate_github(self, url, params=None):
         params = {**(params or {}), 'per_page': 100}
@@ -102,24 +99,26 @@ class Client:
         self.local = threading.local()
 
     def open_json(self, url, body, headers, with_link, source='unscoped'):
+        headers = dict(headers)
+        key, entry = self.cache.prepare(url, headers, body, source)
         proxies = {'http': self.proxy, 'https': self.proxy} if self.proxy else None
         self.metrics.add(source, requests=1)
         try:
             with self.session().request('GET' if body is None else 'POST', url,
                                         data=body, headers=headers, proxies=proxies,
                                         timeout=self.timeout) as response:
-                return self.decode_response(response, url, with_link, source)
+                return self.decode_response(response, url, with_link, source, key, entry)
         except requests.RequestException as exc:
             self.metrics.add(source, http_errors=1)
             raise urllib.error.URLError(type(exc).__name__) from None
 
-    def decode_response(self, response, url, with_link, source):
+    def decode_response(self, response, url, with_link, source, key=None, entry=None):
         bodies = [*response.history, response]
         self.metrics.add(source, requests=len(response.history),
                          response_bytes=sum(len(item.content) for item in bodies),
                          not_modified=int(response.status_code == 304))
         if response.status_code >= 400:
             self.metrics.add(source, http_errors=1)
-            raise urllib.error.HTTPError(url, response.status_code, 'HTTP error', {}, None)
-        result = json.loads(response.content)
-        return (result, response.headers.get('Link', '')) if with_link else result
+            raise urllib.error.HTTPError(url, response.status_code, response.text[:512], response.headers, None)
+        result, link = self.cache.decode(response, key, entry, source)
+        return (result, link) if with_link else result

@@ -3,6 +3,7 @@ import datetime as dt
 import re
 import concurrent.futures
 import logging
+from advisories.cve_bundle import load_bundle
 from advisories.cve_index import retain_seen, inspected, mark_seen, selected_hashes
 from advisories.metrics import cache_hit
 NAME="cve"
@@ -26,7 +27,7 @@ def cve_record(raw, products):
             'references': sorted({r['url'] for b in blocks for r in b.get('references', [])})}
 
 
-def cve_delta(client, products, since, until, previous_seen, previous_records, workers, progress=None):
+def cve_delta(client, products, since, until, previous_seen, previous_records, workers, progress=None, bundles=True):
     batches = client.json(CVE_LOG)
     if not isinstance(batches, list) or not batches:
         raise ValueError('Empty or invalid CVE delta log')
@@ -42,6 +43,7 @@ def cve_delta(client, products, since, until, previous_seen, previous_records, w
     cache_hit(client, len(entries) - len(pending))
     logging.getLogger(__name__).info(f'cve: {len(pending)} changed records to inspect')
     records = list(cached.get('records', []))
+    bundled = load_bundle(client, pending, until) if bundles else {}
     def fetch(entry):
         # Construct trusted raw URL; do not fetch URLs supplied inside vulnerability prose.
         match = re.fullmatch(r'CVE-(\d{4})-(\d{4,})', entry['cveId'])
@@ -49,7 +51,7 @@ def cve_delta(client, products, since, until, previous_seen, previous_records, w
             raise ValueError('Invalid CVE ID')
         year, number = match.groups()
         url = f'https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/{year}/{number[:-3]}xxx/{entry["cveId"]}.json'
-        raw = client.json(url)
+        raw = bundled.get(entry['cveId']) or client.json(url)
         hits = product_matches(raw, products)
         # Keep rejected records even if their description no longer names the product.
         selected = {p['id'] for p in products}
@@ -66,7 +68,7 @@ def collect(client, product, since, until, context):
     old=context.get('old', {})
     seen=old.get('cve_seen', {})
     records, seen=cve_delta(client, context['products'], since, until, seen,
-                            context.get('known', {}), context.get('workers',8), context.get('progress'))
+                            context.get('known', {}), context.get('workers',8), context.get('progress'), context.get('bundles', True))
     return {'records':records, 'metadata':{'cve_seen':seen}}
 
 MATCH_BASIS = 'product-description-or-reference'

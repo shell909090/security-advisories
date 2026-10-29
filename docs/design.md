@@ -1,6 +1,6 @@
 # 设计与数据格式
 
-本文定义实际实现的命令、模块、同步协议和本地格式。用户可见功能与行为见 [req.md](req.md)，尚未实现的增量优化研究见 [incremental.md](incremental.md)。
+本文定义实际实现的命令、模块、同步协议和本地格式。用户可见功能与行为见 [req.md](req.md)，剩余功能及优化见 [tasks.md](tasks.md)。
 
 ## 结构与命令
 
@@ -218,10 +218,10 @@ summary Markdown 表列为：产品、Critical、High、受影响版本/组件�
 | retries | 初次尝试之外的重试次数 |
 | http_errors | HTTP >=400 或网络异常次数；JSON 内容无效由源错误报告，不计为 HTTP 错误 |
 | cache_hits | OSV 已缓存详情跳过 GET 的 ID 数；CVE 已检查同版本且覆盖选中产品而跳过详情的 ID 数；不是连接复用次数 |
-| not_modified | 收到 HTTP 304 的次数；本轮没有实现 ETag 正文缓存，正常应为0 |
+| not_modified | 收到 HTTP 304 的次数；配合持久化正文缓存统计实际304 |
 | new | 来源返回的 `(产品unit,ID)` 此前不存在的条数；CVE 按全局 unit 计 |
 | changed | 同一 unit/ID 的有效内容指纹变化条数，不含纯时间/独立引用变化 |
-| removed | 完整 OSV 包索引成功刷新后从该产品源记录中移除的条数 |
+| removed | 完整 OSV 包索引或项目完整核对成功后从该产品源记录中移除的条数 |
 | unchanged | 本轮源返回但有效内容未变化的条数；CVE 跳过下载的条目计 cache_hits，不重复计这里 |
 
 共享公告映射多个产品时 new/changed/unchanged 可以多次计数，HTTP 和 OSV 详情缓存命中按实际请求/ID计一次。统计用于比较网络开销与本地记录变化，不用于判断已通知。失败批次的网络消耗照常统计，检查点和共享缓存仍不提交。
@@ -243,3 +243,52 @@ Python >=3.10，uv 管理依赖，Make 管理验证。质量门限覆盖全部�
 摘要的受影响范围与公告修复版本按产品、组件/平台标签隔离合并。纯数字点分版本支持比较运算、逗号连接的交集和 || 连接的并集：例如 >=1, >=2 化为 >=2；不同公告的范围取并集，>=1 与 >=2 合并为 >=1。重叠或无空隙的区间合并，开闭边界及空隙保留。版本尾零等价比较，显示保留公告中的版本写法。组件标签使用 casefold 统一大小写。Chrome 采用稳定版本累计修复策略：同一组件/平台标签内的纯数字修复版本按数字元组取最大值，作为本次摘要的升级目标；明确区分的分支标签独立处理。其他产品的离散修复版本仍保留，不默认套用累计修复策略。未知修复信息的警告保留，结果不保证覆盖未收录漏洞。预发布、通配符、文字修饰及矛盾条件不猜测语义，原样保留；详情保留逐源原始证据。
 
 Detail 支持互斥的 --days（默认3，正有限数）、--since（ISO 时间，无时区按 UTC）、--history（取消时间限制）。任一来源的 published/modified 落在起点至当前 UTC 时间的闭区间即可；未知或未来时间不命中普通窗口。输出标明实际起止时间或全部历史，不读取展示去重历史。
+
+## 分通道调度与限流
+
+调度队列为 cve、github（ghsa+project）、nvd、osv。CVE 首先提交，每通道最多一个活跃采集任务，完成或失败后再提交该通道下一任务。--jobs（默认6）限制外层工作线程，四个内置通道最多同时4任务，jobs=1仍可执行。CVE 的 --workers 默认8，独立限制详情下载线程。
+
+主调度线程仍负责状态提交。GitHub API 请求另有共享互斥，覆盖 CVE release 元数据查询，避免与 GHSA/project 重叠。每线程 Session 继续复用。限流冷却按主机存于内存：Retry-After 优先，其次 GitHub remaining=0/reset；429或明确限流403默认至少60秒退避。重试最多3次，耗尽后冷却仍约束后续任务；普通403不重试，5xx保留指数退避。NVD 请求间隔限速不变。
+
+## HTTP 条件缓存格式
+
+主状态新增可选 http_cache 对象，缺省为空。键为 URL（含编码后的参数）及请求 headers 的稳定 SHA-256；headers 包含认证上下文，只有摘要入键，令牌/完整请求头不持久化。
+
+每个值为 {source, body, link, etag, last_modified, used_at}：
+
+- source：ghsa/project/cve；
+- body：成功解析的完整 JSON（任意 JSON 类型）；
+- link：原响应 Link 字符串；
+- etag/last_modified：原验证头字符串，可为 null；
+- used_at：本地使用时刻，Unix 秒数（浮点）。
+
+仅缓存 GHSA/项目 GET 和 CVE deltaLog；不缓存 POST、NVD、CVE单条和压缩包。请求优先 If-None-Match，否则 If-Modified-Since。304必须已有完整正文才能复用，分页继续使用保存的 Link。200只有完整解析成功且有验证头才保存；失败源持久化时恢复旧缓存。按 used_at 保留最近512项，不保证按字节限制。主状态原子写入规则不变。
+
+项目 unit 新增 full_checked_at（UTC ISO时间）；首次/配置变化/history/间隔7天完整核对，其他轮次 updated 倒序并在记录更新时间早于 since 时停止。完整成功使用 replace_records 替换项目来源快照，增量保留旧记录；缺失/无效更新时间不早停。
+
+## CVE 压缩包加速与统计补充
+
+--cve-bundle auto（默认）/off。当天版本时间落在 UTC 0点至 until 的待查记录不少于200，才读取官方 latest release 元数据。选择当天 delta ZIP，声明大小不超过16 MiB且不超过待查数×2048字节。压缩包下载后在内存解析，仅采用 ID 和 cveMetadata.dateUpdated 与待查日志一致的记录，其余仍走原单条下载。不是跨日游标，不改变日志覆盖检查或检查点。
+
+下载限制16 MiB，ZIP声明解压总量限制128 MiB，不写解压文件；临时内存字节不持久化，不新增业务文件。格式为官方 ZIP 中的 CVE JSON 对象，读取 cveMetadata 与 containers，复用原归一化流程。失败回退单条请求，不把压缩包失败单独视为源失败。
+
+response_bytes 仍是 HTTP 解码后正文大小：ZIP正文按ZIP字节计，不按ZIP内部解压体积计。not_modified 现在统计实际304；cache_hits仍只计跳过的OSV/CVE详情，304单独计数。removed扩展为OSV完整索引或项目完整核对移除的源记录数。压缩包复用条数写诊断日志；元数据、重定向与ZIP请求均计入CVE来源统计。
+
+
+## NVD 已知漏洞复核
+
+在正常关键词/修改时间查询后，按产品的 NVD unit 检查已有记录，每7天独立按 CVE ID 复核。查询参数 cveIds 为最多100个逗号分隔 ID，resultsPerPage=100；无关键词、等级或时间限制，仍在 NVD 串行通道及原限速下执行。本轮关键词查询已返回的记录视为已检查，不重复查询。
+
+unit 新增可选 known_checked_at 对象：键为 CVE ID，值为最近成功接收该记录的本地 UTC ISO 时间（例如 {"CVE-2026-22812":"2026-10-29T14:00:00Z"}）。缺失字段/时间的旧记录首次复核；每次成功关键词查询或 ID 复核更新时间，与上游 modified 无关。不保存独立复核文件。
+
+响应 totalResults 必须等于所请求 ID 数，返回 ID 必须属于请求集合且不重复；如接口分页则继续读取直到完整。空结果、缺 ID、异常响应或请求失败使该产品 NVD 任务失败，不提交本轮记录、known_checked_at 或检查点，保留旧缓存并报告可能过期。不得把查不到解释为撤回。
+
+成功结果按 ID 覆盖旧证据，重新经过现有归属/严重性/撤回合并规则后生成 catalog。归属变化可移出该产品目录，但同步层保留证据；其他来源仍可能独立确认产品归属。只有官方 Rejected 等明确证据才按现有规则撤回。复核 HTTP 开销和记录变化计入既有 NVD 统计。
+
+## 数据源参考
+
+- [GitHub REST 最佳实践](https://docs.github.com/en/rest/using-the-rest-api/best-practices-for-using-the-rest-api)
+- [项目安全公告](https://docs.github.com/en/rest/security-advisories/repository-advisories)
+- [OSV querybatch](https://google.github.io/osv.dev/post-v1-querybatch/)
+- [NVD API](https://nvd.nist.gov/developers/vulnerabilities)
+- [CVE 官方下载协议](https://github.com/CVEProject/cvelistV5#how-to-download-the-cve-list)

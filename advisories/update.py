@@ -5,6 +5,7 @@ import time
 from functools import partial
 from .collector import collect_job, collection_jobs, execute_jobs, known_cves
 from .http_client import Client
+from .http_cache import HttpCache
 from .records import merge_records
 from .checkpoints import cve_scope
 from .product_identity import product_confirmed
@@ -41,6 +42,8 @@ def run(args):
     errors, completed = [], []
     started = time.monotonic()
     client = Client(args.timeout, args.proxy)
+    previous_http = state.get('http_cache', {})
+    client.cache = HttpCache(previous_http)
     collect = partial(collect_job, args=args, state=state,
                       until=until, available=available, client=client,
                       products=products, known=known_cves(state))
@@ -51,6 +54,8 @@ def run(args):
     refresh_catalog(state, products, args.min_severity, errors, until)
     state['last_update'] = {'generated_at': until.isoformat(), 'sources': client.metrics.snapshot(),
                             'errors': errors, 'elapsed_seconds': round(time.monotonic() - started, 2)}
+    failed = {error['source'].split(':')[0] for error in errors}
+    state['http_cache'] = client.cache.snapshot(previous_http, failed)
     atomic_json(args.state, state)
     clear_completed(args.state, config_hash, completed)
     count = sum(len(state['catalog'][p['id']]['records']) for p in products)

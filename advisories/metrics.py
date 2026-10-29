@@ -29,6 +29,9 @@ class SourceClient:
     def json(self, url, params=None, data=None, with_link=False):
         return self.client.json(url, params=params, data=data, with_link=with_link, source=self.source)
 
+    def bytes(self, url):
+        return self.client.bytes(url, source=self.source)
+
     def paginate_github(self, url, params=None):
         from .http_client import Client
         yield from Client.paginate_github(self, url, params)
