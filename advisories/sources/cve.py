@@ -3,6 +3,8 @@ import datetime as dt
 import re
 import concurrent.futures
 import sys
+from advisories.cve_index import retain_seen, inspected, mark_seen, selected_hashes
+from advisories.metrics import cache_hit
 NAME="cve"
 GLOBAL=True
 CVE_LOG="https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/deltaLog.json"
@@ -34,8 +36,10 @@ def cve_delta(client, products, since, until, previous_seen, previous_records, w
     cached = progress.load() if progress else {}
     previous_seen = {**previous_seen, **cached.get('seen', {})}
     entries = delta_entries(batches, since, until)
-    seen = {k: v for k, v in previous_seen.items() if parse_time(v) >= oldest}
-    pending = [entry for key, entry in entries.items() if seen.get(key) != entry['dateUpdated']]
+    scopes = selected_hashes(products)
+    seen = retain_seen(previous_seen, oldest, until)
+    pending = [entry for entry in entries.values() if not inspected(seen, entry, scopes)]
+    cache_hit(client, len(entries) - len(pending))
     print(f'cve: {len(pending)} changed records to inspect', file=sys.stderr, flush=True)
     records = list(cached.get('records', []))
     def fetch(entry):
@@ -48,16 +52,19 @@ def cve_delta(client, products, since, until, previous_seen, previous_records, w
         raw = client.json(url)
         hits = product_matches(raw, products)
         # Keep rejected records even if their description no longer names the product.
+        selected = {p['id'] for p in products}
+        previous = previous_records.get(entry['cveId'], {}).get('products', [])
         if not hits:
-            hits = previous_records.get(entry['cveId'], {}).get('products', [])
+            hits = [ident for ident in previous if ident in selected]
+        hits = sorted(set(hits) | (set(previous) - selected))
         return entry, cve_record(raw, hits) if hits else None
-    download_batches(fetch, pending, workers, records, seen, progress)
+    download_batches(fetch, pending, workers, records, seen, progress, scopes)
     return records, seen
 
 
 def collect(client, product, since, until, context):
     old=context.get('old', {})
-    seen={} if context.get('config_changed') else old.get('cve_seen', {})
+    seen=old.get('cve_seen', {})
     records, seen=cve_delta(client, context['products'], since, until, seen,
                             context.get('known', {}), context.get('workers',8), context.get('progress'))
     return {'records':records, 'metadata':{'cve_seen':seen}}
@@ -78,12 +85,12 @@ def delta_entries(batches, since, until):
     return entries
 
 
-def download_batches(fetch, pending, workers, records, seen, progress):
+def download_batches(fetch, pending, workers, records, seen, progress, scopes=None, now=None):
     # Bound queued work and persist successful results even if a peer fails.
     with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
         for start in range(0, len(pending), 100):
             batch = pending[start:start + 100]
-            error = consume_batch(executor, fetch, batch, records, seen)
+            error = consume_batch(executor, fetch, batch, records, seen, scopes or {}, now or dt.datetime.now(dt.timezone.utc))
             if progress:
                 progress.save(records, seen)
             print(f'cve: {start + len(batch)}/{len(pending)} inspected', file=sys.stderr, flush=True)
@@ -91,13 +98,13 @@ def download_batches(fetch, pending, workers, records, seen, progress):
                 raise error
 
 
-def consume_batch(executor, fetch, batch, records, seen):
+def consume_batch(executor, fetch, batch, records, seen, scopes, now):
     error = None
     futures = [executor.submit(fetch, entry) for entry in batch]
     for future in concurrent.futures.as_completed(futures):
         try:
             entry, record = future.result()
-            seen[entry['cveId']] = entry['dateUpdated']
+            mark_seen(seen, entry, scopes, now)
             if record:
                 records.append(record)
         except Exception as exc:

@@ -59,3 +59,38 @@ class UpdateTests(unittest.TestCase):
             return {'records': [], 'metadata': {}}
         with patch('advisories.update.discover', return_value={'mock': module(collect)}):
             self.assertEqual(command(self.root, 'update', '--jobs', '2')[0], 0)
+
+    def test_subset_and_threshold_keep_sync_checkpoint(self):
+        observed = []
+        def collect(client, product, since, until, context):
+            observed.append((product['id'], context['config_changed'], since))
+            return self.collect(client, product, since, until, context)
+        with patch('advisories.update.discover', return_value={'mock': module(collect)}):
+            command(self.root, 'update', '--min-severity', 'critical')
+            old = json.loads((self.root / 'state.json').read_text())
+            observed.clear()
+            command(self.root, 'update', '--product', 'one', '--min-severity', 'high')
+        self.assertEqual(len(observed), 1)
+        self.assertEqual(observed[0][:2], ('one', False))
+        new = json.loads((self.root / 'state.json').read_text())
+        self.assertEqual(old['units']['mock:two'], new['units']['mock:two'])
+        self.assertIn('last_update', new)
+        self.assertEqual(new['last_update']['sources']['mock']['unchanged'], 1)
+
+    def test_failed_batch_retains_all_units_and_cache(self):
+        from advisories.sources import osv
+        from advisories.http_client import Client
+        from .test_incremental import Client as Responses
+        entries = {'results': [{'vulns': [{'id': 'GHSA-one', 'modified': 'a'}]}]}
+        fake = Responses([entries, {'id': 'GHSA-one', 'modified': 'a'}])
+        def request(client, url, **kwargs):
+            return fake.json(url, **kwargs)
+        with patch('advisories.update.discover', return_value={'osv': osv}), patch.object(Client, 'json', request):
+            self.assertEqual(command(self.root, 'update', '--product', 'one')[0], 0)
+        old = json.loads((self.root / 'state.json').read_text())
+        fake = Responses([{'results': [{'vulns': [{'id': 'GHSA-one', 'modified': 'b'}]}]}, RuntimeError('failure')])
+        with patch('advisories.update.discover', return_value={'osv': osv}), patch.object(Client, 'json', request):
+            self.assertEqual(command(self.root, 'update', '--product', 'one')[0], 1)
+        new = json.loads((self.root / 'state.json').read_text())
+        self.assertEqual(new['units'], old['units'])
+        self.assertEqual(new['source_caches'], old['source_caches'])

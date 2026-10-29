@@ -1,33 +1,33 @@
 # 安全公告缓存与产品报告
 
-Python 3.10+，uv 管理依赖，requests 复用 HTTP 连接。一个入口三个子命令：更新缓存、查看产品摘要、查看漏洞详情。应用代码在 `advisories/`，根目录仅保留入口 `fetch.py`。
+Python 3.10+，uv 管理依赖，requests 复用 HTTP 连接。一个入口三个子命令：更新缓存、查看产品摘要、查看漏洞详情。应用代码在 `advisories/`，根目录仅保留入口 `main.py`。
 
 ```bash
 uv sync
 
 # 更新所有关注产品，收录 High + Critical；不修改展示历史
-uv run python fetch.py update --min-severity high
+uv run python main.py update --min-severity high
 
 # 只更新指定产品；默认最低级别为 Critical
-uv run python fetch.py update --product chrome,uv --min-severity high --days 3
+uv run python main.py update --product chrome,uv --min-severity high --days 3
 
 # 离线摘要：默认近 3 天、High + Critical、仅未展示/内容有变化的条目
-uv run python fetch.py summary
-uv run python fetch.py summary --product chrome --min-severity critical --days 7
+uv run python main.py summary
+uv run python main.py summary --product chrome --min-severity critical --days 7
 
 # 忽略展示历史且不更新历史；--history 取消时间窗口
-uv run python fetch.py summary --all
-uv run python fetch.py summary --history --all
-uv run python fetch.py summary --shown     # 仅已展示，不修改历史
+uv run python main.py summary --all
+uv run python main.py summary --history --all
+uv run python main.py summary --shown     # 仅已展示，不修改历史
 
 # 指定产品和确切级别，列出缓存内全部漏洞，Markdown 格式
-uv run python fetch.py detail --product chrome --severity critical
-uv run python fetch.py detail --product chrome --severity high --output /tmp/chrome-high.md
+uv run python main.py detail --product chrome --severity critical
+uv run python main.py detail --product chrome --severity high --output /tmp/chrome-high.md
 
 make check                               # 测试 + 所有质量门限
 ```
 
-每个子命令支持 `--products 配置路径`、`--state 缓存路径`、`--output 输出路径`。产品筛选用 `--product 产品ID[,产品ID]`；detail 只能选择一个产品。详细参数用 `uv run python fetch.py 子命令 --help`。
+每个子命令支持 `--products 配置路径`、`--state 缓存路径`、`--output 输出路径`。产品筛选用 `--product 产品ID[,产品ID]`；detail 只能选择一个产品。详细参数用 `uv run python main.py 子命令 --help`。
 
 ## Summary
 
@@ -51,15 +51,15 @@ update 决定产品和最低收录级别，summary 只能二次收窄。降低 s
 
 来源：
 
-- GHSA：准确包名、reviewed、日期增量。
+- GHSA：按生态和时间窗口批量查询准确包名，reviewed、日期增量；返回公告按包名分配产品。
 - 项目公告：GitHub 仓库 Security Advisories；与全局 GHSA 覆盖不完全相同，不默认扫描 release notes。
-- OSV：准确包名、无安装版本查询，重查包历史以捕获延迟收录。
+- OSV：querybatch 查询包的 ID/修改时间索引，无安装版本限制；仅对新 ID 或修改时间变化的 ID 下载详情，详情跨产品共享。
 - NVD：关键词和修改时间；结构化产品信息再确认。
 - CVE：全局滚动 deltaLog，下载变更详情后匹配关注产品。
 
 使用 `--sources ghsa,osv,project,nvd,cve` 选择来源。默认 `--jobs 6`，CVE 详情 `--workers 8`（最大 32）。NVD 共享限速，不靠增加并发绕过配额。失败源保留旧缓存、不推进检查点，报告提示可能过期。
 
-CVE 每 100 条将成功记录原子写入 `<state路径>.cve-progress.json`；部分失败也保存成功结果，下次相同配置跳过未变化的成功项。配置变化会使批次缓存失效；主状态写入成功后清理已完成批次。每线程独立 requests Session 复用连接，采集结束关闭。
+CVE 每 100 条将成功记录原子写入 `<state路径>.cve-progress.json`；部分失败也保存成功结果，下次相同配置跳过未变化的成功项。所选产品匹配范围变化会使批次缓存失效，级别变化不会；主状态写入成功后清理已完成批次。每线程独立 requests Session 复用连接，采集结束关闭。
 
 GitHub 凭据读取 `GH_TOKEN` 或 `GITHUB_TOKEN`，NVD 可用 `NVD_API_KEY`，均不落盘。支持标准代理环境变量和 `--proxy`。退出码：0 成功、1 更新部分源失败、2 参数/整体错误。
 
@@ -89,3 +89,13 @@ make check         # 测试 + 静态指标（默认目标）
 ```
 
 检查覆盖源码、测试和检查脚本，排除隐藏目录和 Python 缓存。超限以非零状态退出，不对存量代码豁免。需求和实现设计见 `docs/req.md`、`docs/design.md`。
+
+## 增量状态与统计
+
+普通来源检查点按产品和相关配置隔离；CVE 保存每产品覆盖时间与匹配配置。切换更新产品子集或最低等级，不再重置无关产品的同步进度。首次从旧 collection_hash 缺失的缓存迁移，会按回溯窗口重新建立检查点一次。
+
+CVE 已检查索引保存 modified、checked_at、products；清理依据本地成功检查时间，避免延迟入库的旧公告反复下载。OSV 共享索引/原始详情缓存位于 `state.json.source_caches.osv`。
+
+每轮 stderr 输出每源 requests、response_bytes、retries、http_errors、cache_hits、not_modified、new/changed/unchanged/removed，并保存到 `state.json.last_update`。response_bytes 为解压后的 HTTP 正文字节，不是线路流量；cache_hits 是省略详情请求的次数，不是连接池复用。记录变化数按来源产品记录计，共享 ID 的 HTTP 请求只计实际次数。HTTP ETag 条件缓存尚未实现，not_modified 正常为0。
+
+全部本地格式及兼容规则见 [设计文档](docs/design.md)。

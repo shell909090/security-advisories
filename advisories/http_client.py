@@ -7,9 +7,11 @@ import time
 import urllib.error
 import urllib.parse
 import requests
+from .metrics import Metrics, SourceClient
 
 class Client:
     def __init__(self, timeout=30, proxy=None):
+        self.metrics = Metrics()
         self.timeout = timeout
         self.proxy = proxy
         self.nvd_lock = threading.Lock()
@@ -17,6 +19,10 @@ class Client:
         self.local = threading.local()
         self.sessions = []
         self.session_lock = threading.Lock()
+
+    def for_source(self, source):
+        self.metrics.add(source)
+        return SourceClient(self, source)
 
     def request_parts(self, url, data):
         host = urllib.parse.urlparse(url).hostname
@@ -40,14 +46,15 @@ class Client:
                 time.sleep(max(0, interval - (time.monotonic() - self.nvd_last)))
                 self.nvd_last = time.monotonic()
 
-    def json(self, url, params=None, data=None, with_link=False):
+    def json(self, url, params=None, data=None, with_link=False, source="unscoped"):
         if params:
             url += ('&' if '?' in url else '?') + urllib.parse.urlencode(params, doseq=True)
         host, headers, body = self.request_parts(url, data)
         for attempt in range(3):
+            self.metrics.add(source, retries=int(attempt > 0))
             self.throttle(host)
             try:
-                return self.open_json(url, body, headers, with_link)
+                return self.open_json(url, body, headers, with_link, source)
             except urllib.error.HTTPError as exc:
                 if attempt < 2 and exc.code in (429, 500, 502, 503, 504):
                     time.sleep(min(30, 2 ** (attempt + 1)))
@@ -94,15 +101,25 @@ class Client:
         self.sessions.clear()
         self.local = threading.local()
 
-    def open_json(self, url, body, headers, with_link):
+    def open_json(self, url, body, headers, with_link, source='unscoped'):
         proxies = {'http': self.proxy, 'https': self.proxy} if self.proxy else None
+        self.metrics.add(source, requests=1)
         try:
             with self.session().request('GET' if body is None else 'POST', url,
                                         data=body, headers=headers, proxies=proxies,
                                         timeout=self.timeout) as response:
-                if response.status_code >= 400:
-                    raise urllib.error.HTTPError(url, response.status_code, 'HTTP error', {}, None)
-                result = response.json()
-                return (result, response.headers.get('Link', '')) if with_link else result
+                return self.decode_response(response, url, with_link, source)
         except requests.RequestException as exc:
+            self.metrics.add(source, http_errors=1)
             raise urllib.error.URLError(type(exc).__name__) from None
+
+    def decode_response(self, response, url, with_link, source):
+        bodies = [*response.history, response]
+        self.metrics.add(source, requests=len(response.history),
+                         response_bytes=sum(len(item.content) for item in bodies),
+                         not_modified=int(response.status_code == 304))
+        if response.status_code >= 400:
+            self.metrics.add(source, http_errors=1)
+            raise urllib.error.HTTPError(url, response.status_code, 'HTTP error', {}, None)
+        result = json.loads(response.content)
+        return (result, response.headers.get('Link', '')) if with_link else result

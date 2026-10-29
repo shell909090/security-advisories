@@ -12,7 +12,7 @@ class SourceTests(unittest.TestCase):
     def test_unified_result(self):
         class Client:
             def json(self, *args, **kwargs):
-                return {'vulns': [{'id': 'GHSA-test'}]}
+                return {'results': [{'vulns': [{'id': 'GHSA-test', 'modified': 'm'}]}]} if args[0].endswith('querybatch') else {'id': 'GHSA-test', 'modified': 'm'}
         p = {'id': 'test', 'packages': [{'ecosystem': 'npm', 'name': 'test'}]}
         result = discover()['osv'].collect(Client(), p, None, None, {})
         self.assertEqual(set(result), {'records', 'metadata'})

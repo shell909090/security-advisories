@@ -55,10 +55,12 @@ class FetchTests(unittest.TestCase):
         self.assertNotEqual(fetch.meaningful(a), fetch.meaningful(b))
 
     def test_osv_pagination_retains_package_query(self):
-        client = FakeClient([{'vulns': [{'id': 'a'}], 'next_page_token': 'next'}, {'vulns': [{'id': 'b'}]}])
+        client = FakeClient([{'results': [{'vulns': [{'id': 'a', 'modified': 'm'}], 'next_page_token': 'next'}]},
+                             {'results': [{'vulns': [{'id': 'b', 'modified': 'm'}]}]},
+                             {'id': 'a', 'modified': 'm'}, {'id': 'b', 'modified': 'm'}])
         product = {'id': 'codex', 'packages': [{'ecosystem': 'npm', 'name': '@openai/codex'}]}
         self.assertEqual([r['id'] for r in fetch.osv_product(client, product)], ['a', 'b'])
-        self.assertEqual(client.calls[1][1]['package'], product['packages'][0])
+        self.assertEqual(client.calls[1][1]['queries'][0]['package'], product['packages'][0])
 
     def test_cve_coverage_gap_fails(self):
         client = FakeClient([[{'fetchTime': '2026-10-20T00:00:00Z', 'new': [], 'updated': []}]])
@@ -74,7 +76,7 @@ class FetchTests(unittest.TestCase):
         previous = {entry['cveId']: {'products': ['codex']}}
         rows, seen = fetch.cve_delta(client, [], fetch.parse_time('2026-10-27'), fetch.parse_time('2026-10-29'), {}, previous, 1)
         self.assertTrue(rows[0]['withdrawn'])
-        self.assertEqual(seen[entry['cveId']], entry['dateUpdated'])
+        self.assertEqual(seen[entry['cveId']]['modified'], entry['dateUpdated'])
 
     def test_matching_no_substring_accident(self):
         products = [{'id': 'hermes', 'keywords': ['Hermes Agent'], 'repositories': ['NousResearch/hermes-agent'], 'packages': []}]
