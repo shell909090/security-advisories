@@ -1,5 +1,6 @@
 """Offline catalog selection and alias-aware, product-scoped display history."""
 from .evidence import active_evidence
+from .version_floor import excluded, minimum
 import datetime as dt
 import logging
 from .filters import is_recent
@@ -50,6 +51,8 @@ def history_keys(product, row):
 
 
 def select_summary(args, candidates, history):
+    for product in load_products(args):
+        minimum(product)
     now = dt.datetime.now(dt.timezone.utc)
     cutoff = now - dt.timedelta(days=args.days)
     return [(product, row) for product, row in candidates
@@ -57,6 +60,8 @@ def select_summary(args, candidates, history):
 
 
 def visible(args, product, row, records, cutoff, now):
+    if excluded(row, product):
+        return False
     if LEVEL.get(row['severity'], -1) < LEVEL[args.min_severity]:
         return False
     previous = [records[key] for key in history_keys(product, row) if key in records]

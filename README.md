@@ -118,3 +118,7 @@ NVD 对已有记录每7天按 CVE ID 批量复核（每批最多100条），不�
 HTTP 条件缓存独立保存在 `<state所在目录>/http-cache.json.gz`，仅 update 读取；缺失或损坏会重新获取。旧 state.json 内嵌缓存在下次 update 保存时自动迁移。CVE 检查进度在磁盘上共享产品配置映射，兼容旧数据；summary/detail 不需要读取压缩 HTTP 缓存。备份业务状态时保留 state.json 和未完成的 `.cve-progress.json`，HTTP 旁文件可选。
 
 同一状态目录的所有命令共用 `advisories.lock`，冲突时立即报错退出。该锁不影响 update 内部的通道并发；不同目录独立运行时，不要交叉共享展示历史等业务文件。
+
+## 最低版本门限
+
+在 products.json 的产品对象中添加 `"min_version": "1.106.6"`（例如 LiteLLM）。该值由你汇总多台机器的最低版本，必须为数字点分字符串；不填写或设为 null 表示关闭。仅 summary 隐藏能确认全部受影响版本均低于门限的漏洞；高版本重新引入的漏洞、未知或无法比较的范围仍显示。update 和 detail 不受影响，无需重新 update。`--all` 只绕过展示历史，不绕过版本门限；被过滤条目不会记为已展示。

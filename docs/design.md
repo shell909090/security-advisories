@@ -47,6 +47,7 @@ JSON、运行时 lock、Python 字节码和 `.venv/` 被 Git 忽略，uv.lock �
 ]
 ```
 
+- `min_version`：可选的纯数字点分版本字符串（如 `"1.106.6"`），缺省或 null 不过滤。仅 summary 校验并使用，非法值报错；不参与采集指纹、检查点或缓存。按受影响范围与 `[min_version, +∞)` 是否可能相交过滤，不是单点版本检测。所有有效来源均须提供匹配产品的可理解范围且完全低于门限，才隐藏。支持数字 GHSA 比较区间、OSV SEMVER/ECOSYSTEM 事件和显式版本、CVE 数字范围、NVD CPE 数字边界；预发布、Git 范围、CVE changes/custom/defaultStatus=affected、未知或缺失信息保守保留。仅依赖修复版本不能隐藏。撤回证据不参与判断；历史在过滤后按原规则处理，修改门限不清空历史，`--all`/`--shown` 仍应用门限。
 - `id`：稳定唯一产品标识，命令行使用此值；`label`：显示名，可缺省。
 - `repositories`：GitHub `owner/repo` 字符串数组；`packages`：`{ecosystem,name}` 数组，可为空；`keywords`：产品候选发现与身份匹配名称数组。
 - `nvd_keywords`：可选，覆盖 NVD 自动关键词合并策略。
@@ -305,3 +306,9 @@ unit 新增可选 known_checked_at 对象：键为 CVE ID，值为最近成功�
 磁盘上的 `units.cve.cve_seen_scopes` 为 `{局部引用字符串: {product_id:配置哈希}}`；`cve_seen[ID]` 为 `{modified, checked_at, products_ref:引用字符串}`。相同的整个产品/配置哈希映射只保存一次，引用从 `"0"` 起按本次编码顺序分配，写入时仅保存仍被引用的作用域。不同配置版本、不同产品子集不能共用一个映射。业务内存解码回旧 `products` 映射，不改变 inspected、清理和检查点语义。
 
 进度文件采用同样方式：`seen_scopes` 为引用表，`seen[ID].products_ref` 指向它。引用只在所属主状态或进度文件内有效，加载后再合并，不能直接合并两份磁盘引用。旧版内嵌 products 和更早的时间字符串兼容读取；保存转为共享格式。缺失、非法引用或映射应报错，不能当作已检查。编解码不修改调用者对象，未使用的旧作用域随下一次写入回收。
+
+## Chrome 门限兼容
+
+Google Chrome 的 CVE 证据可能使用 `versionType: custom` 且 `version == lessThan` 重复记录修复边界。仅对 Chrome 产品、Google/Chrome 结构化节点，且同一证据正文明确写出 `Google Chrome ... prior to VERSION` 并与该边界完全一致时，门限过滤将该条解释为 `< VERSION`。不改写缓存，不推广到其他 custom 范围；changes、未知状态、其他分支和跨来源冲突仍保守保留。
+
+Chrome 证据完全没有结构化范围（affected 缺省、空列表或仅空对象）时，可采用同一证据正文明确的 Chrome prior to 数字边界；存在非空但未知/矛盾结构时不以正文覆盖。
