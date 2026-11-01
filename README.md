@@ -121,4 +121,10 @@ HTTP 条件缓存独立保存在 `<state所在目录>/http-cache.json.gz`，仅 
 
 ## 最低版本门限
 
-在 products.json 的产品对象中添加 `"min_version": "1.106.6"`（例如 LiteLLM）。该值由你汇总多台机器的最低版本，必须为数字点分字符串；不填写或设为 null 表示关闭。仅 summary 隐藏能确认全部受影响版本均低于门限的漏洞；高版本重新引入的漏洞、未知或无法比较的范围仍显示。update 和 detail 不受影响，无需重新 update。`--all` 只绕过展示历史，不绕过版本门限；被过滤条目不会记为已展示。
+在 products.json 的产品对象中添加 `"min_version": "1.106.6"`（例如 LiteLLM）。该值由你汇总多台机器的最低版本，必须为数字点分字符串；不填写或设为 null 表示关闭。仅 summary 隐藏能确认全部受影响版本均低于门限的漏洞；高版本重新引入的漏洞、未知或无法比较的范围仍显示。update 和 detail 不受影响，无需重新 update。`--all` 只绕过展示历史，不绕过版本门限；被过滤条目不会记为已展示。临时跳过版本门限可用 `uv run main.py summary --all --days 10 --ignore-min-version`，无需修改配置。
+
+## KEV 数据源
+
+默认 update 包含 CISA KEV，也可使用 `uv run python main.py update --sources kev`。每次下载官方目录并筛选最近两个自然月的 dateAdded；通用时间参数不改变此窗口。旧证据保留。KEV 未提供等级和版本时保持未知，KEV 一律按 Critical 优先级收录和筛选，保留原始评分。摘要单列 KEV，Critical/High 不重复统计 KEV；detail --severity critical 包含 KEV 并说明优先级。时间、最低版本和展示历史规则仍适用，新加入 KEV 会再次展示。最低版本配置不影响 update。
+
+更新等待时每30秒显示未完成任务。按一次 Ctrl-C 会取消后续请求，等待在途请求结束后保存已完成来源并以130退出；请等待保存完成，重复 Ctrl-C 或强杀仍可能跳过保存。

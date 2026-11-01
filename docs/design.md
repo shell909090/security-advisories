@@ -47,7 +47,7 @@ JSON、运行时 lock、Python 字节码和 `.venv/` 被 Git 忽略，uv.lock �
 ]
 ```
 
-- `min_version`：可选的纯数字点分版本字符串（如 `"1.106.6"`），缺省或 null 不过滤。仅 summary 校验并使用，非法值报错；不参与采集指纹、检查点或缓存。按受影响范围与 `[min_version, +∞)` 是否可能相交过滤，不是单点版本检测。所有有效来源均须提供匹配产品的可理解范围且完全低于门限，才隐藏。支持数字 GHSA 比较区间、OSV SEMVER/ECOSYSTEM 事件和显式版本、CVE 数字范围、NVD CPE 数字边界；预发布、Git 范围、CVE changes/custom/defaultStatus=affected、未知或缺失信息保守保留。仅依赖修复版本不能隐藏。撤回证据不参与判断；历史在过滤后按原规则处理，修改门限不清空历史，`--all`/`--shown` 仍应用门限。
+- `min_version`：可选的纯数字点分版本字符串（如 `"1.106.6"`），缺省或 null 不过滤。仅 summary 校验并使用，非法值报错；不参与采集指纹、检查点或缓存。按受影响范围与 `[min_version, +∞)` 是否可能相交过滤，不是单点版本检测。所有有效来源均须提供匹配产品的可理解范围且完全低于门限，才隐藏。支持数字 GHSA 比较区间、OSV SEMVER/ECOSYSTEM 事件和显式版本、CVE 数字范围、NVD CPE 数字边界；预发布、Git 范围、CVE changes/custom/defaultStatus=affected、未知或缺失信息保守保留。仅依赖修复版本不能隐藏。撤回证据不参与判断；历史在过滤后按原规则处理，修改门限不清空历史，`--all`/`--shown` 仍应用门限。summary 的 `--ignore-min-version`（默认 false）跳过本次最低版本校验和过滤，可与这些选项组合；不写配置，不改变等级、时间和历史语义。
 - `id`：稳定唯一产品标识，命令行使用此值；`label`：显示名，可缺省。
 - `repositories`：GitHub `owner/repo` 字符串数组；`packages`：`{ecosystem,name}` 数组，可为空；`keywords`：产品候选发现与身份匹配名称数组。
 - `nvd_keywords`：可选，覆盖 NVD 自动关键词合并策略。
@@ -312,3 +312,15 @@ unit 新增可选 known_checked_at 对象：键为 CVE ID，值为最近成功�
 Google Chrome 的 CVE 证据可能使用 `versionType: custom` 且 `version == lessThan` 重复记录修复边界。仅对 Chrome 产品、Google/Chrome 结构化节点，且同一证据正文明确写出 `Google Chrome ... prior to VERSION` 并与该边界完全一致时，门限过滤将该条解释为 `< VERSION`。不改写缓存，不推广到其他 custom 范围；changes、未知状态、其他分支和跨来源冲突仍保守保留。
 
 Chrome 证据完全没有结构化范围（affected 缺省、空列表或仅空对象）时，可采用同一证据正文明确的 Chrome prior to 数字边界；存在非空但未知/矛盾结构时不以正文覆盖。
+
+## KEV
+
+kev 为批量源，一次获取 CISA 官方 JSON 全目录，本地按 dateAdded 筛选从本次 UTC 日期回退两个自然月（月底截到目标月末）至当天的闭区间，不受 --days/--since/--history 或检查点缩短。每产品使用 kev:product_id unit，成功后合并证据，窗口外旧证据保留；失败不提交任何产品检查点。部分产品更新不修改其他 unit。
+
+vendorProject/product 转为 affected 的 vendor/product 确认归属。severity=unknown、scores=[]，不推断版本。原条目完整保存在 kev 对象；正文含 requiredAction、dueDate、勒索软件使用情况和 notes。published/modified 使用 dateAdded，代表 KEV 收录日期而非 CVE 发布时间；不使用目录发布时间冒充单条修改时间。按 CVE ID 合并。有效 KEV 证据使派生筛选优先级为 critical，原始及合并 severity 不变；无新增持久化字段。update、summary 和 detail 使用派生优先级。摘要 KEV/Critical/High 互斥计数；detail critical 包含 KEV，其他等级不重复列出。KEV 来源加入改变展示指纹，撤回 KEV 不提供优先级。最低版本判断仍保守处理未知范围，因此没有版本范围的 KEV 证据会使条目保留。HTTP 缓存沿用通用机制。
+
+官方格式：https://github.com/cisagov/kev-data/blob/develop/known_exploited_vulnerabilities_schema.json 。
+
+## 更新取消与等待诊断
+
+调度器每30秒记录尚未完成的任务。首次 Ctrl-C 设置 HTTP 取消事件，唤醒限流及重试等待，取消尚未启动的任务，等待在途请求返回后退出。正在执行的网络请求仍受 timeout 约束，并非强制杀线程。保存已交付成功任务及 HTTP 缓存，未完成来源标记 interrupted、保留原检查点；CVE 批次进度继续保留。update 返回130，不修改展示历史。

@@ -5,7 +5,7 @@ from advisories.sources import discover
 class SourceTests(unittest.TestCase):
     def test_discovery(self):
         modules = discover()
-        self.assertEqual(set(modules), {'ghsa', 'project', 'nvd', 'osv', 'cve'})
+        self.assertEqual(set(modules), {'ghsa', 'project', 'nvd', 'osv', 'cve', 'kev'})
         self.assertTrue(modules['cve'].GLOBAL)
         self.assertFalse(modules['osv'].GLOBAL)
 

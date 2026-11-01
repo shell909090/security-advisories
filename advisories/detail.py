@@ -1,5 +1,6 @@
 """Read-only Markdown evidence for all vulnerabilities at an exact severity."""
 import json
+from .evidence import is_kev
 from .impact import impact_tags
 from .reporting import compact
 from .summary import cell
@@ -27,6 +28,8 @@ def render_row(index, row):
              f"汇总等级：{row['severity']}（未撤回来源最高值，可能与厂商评级不同）", '',
              '证据标签：' + (', '.join(impact_tags(row)) or '未知/待核实'), '',
              '| 组件/平台 | 受影响范围 | 修复版本 | 来源 |', '| --- | --- | --- | --- |']
+    if is_kev(row):
+        lines[4:4] = ['KEV：已知被利用，按 Critical 优先级处理；以下保留原始严重性和评分。', '']
     facts = version_facts(row) or [('未知', '未知', '未知', '未知')]
     lines.extend('| ' + ' | '.join(cell(v) for v in (component, span, fix, source)) + ' |'
                  for span, fix, component, source in facts)

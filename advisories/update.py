@@ -1,4 +1,5 @@
 """Collect sources and maintain the product-scoped admission catalog."""
+from .evidence import priority
 import datetime as dt
 import logging
 import time
@@ -16,7 +17,7 @@ from .storage import save_state, emit, load_products, load_state
 
 
 def admitted(row, product, minimum):
-    if row['withdrawn'] or LEVEL.get(row['severity'], -1) < LEVEL[minimum]:
+    if row['withdrawn'] or LEVEL.get(priority(row), -1) < LEVEL[minimum]:
         return False
     evidence = [e for e in row['evidence'] if e.get('kind') == 'vulnerability']
     scoped = dict(row, products=[product['id']], evidence=evidence)
@@ -47,8 +48,16 @@ def run(args):
     collect = partial(collect_job, args=args, state=state,
                       until=until, available=available, client=client,
                       products=products, known=known_cves(state))
+    interrupted = False
     try:
-        execute_jobs(args, jobs, collect, state, completed, errors)
+        execute_jobs(args, jobs, collect, state, completed, errors, client.cancel)
+    except KeyboardInterrupt:
+        interrupted = True
+        client.cancel()
+        finished = {item['source'] for item in completed}
+        errors.extend({'source': job[2], 'error': 'interrupted'}
+                      for job in jobs if job[2] not in finished)
+        logging.getLogger(__name__).warning('Interrupted; saving completed sources')
     finally:
         client.close()
     refresh_catalog(state, products, args.min_severity, errors, until)
@@ -65,4 +74,4 @@ def run(args):
     logging.getLogger(__name__).info(render_statistics(state['last_update']['sources']))
     for error in errors:
         logging.getLogger(__name__).warning(f"{error['source']}: {error['error']}")
-    return int(bool(errors))
+    return 130 if interrupted else int(bool(errors))

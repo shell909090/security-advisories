@@ -41,8 +41,8 @@ def collection_jobs(args, available, products, state):
     return jobs
 
 
-def execute_jobs(args, jobs, collect, state, completed, errors):
-    for key, future in completed_jobs(jobs, collect, args.jobs):
+def execute_jobs(args, jobs, collect, state, completed, errors, cancel=None):
+    for key, future in completed_jobs(jobs, collect, args.jobs, cancel):
         try:
             updates, caches, stats = future.result()
             state['units'].update(updates)

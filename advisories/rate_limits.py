@@ -35,7 +35,8 @@ def delay(error, attempt):
 
 
 class Cooldowns:
-    def __init__(self):
+    def __init__(self, cancelled=None):
+        self.cancelled = cancelled
         self.lock = threading.Lock()
         self.deadlines = {}
 
@@ -47,7 +48,17 @@ class Cooldowns:
         with self.lock:
             seconds = max(0, self.deadlines.get(host, 0) - time.monotonic())
         if seconds:
+            self.pause(seconds)
+
+    def pause(self, seconds):
+        if self.cancelled is None:
             time.sleep(seconds)
+        elif self.cancelled.wait(seconds):
+            raise RuntimeError('Update cancelled')
+
+    def check(self):
+        if self.cancelled is not None and self.cancelled.is_set():
+            raise RuntimeError('Update cancelled')
 
 
 def retry_http(cooldowns, host, error, attempt):
@@ -59,6 +70,6 @@ def retry_http(cooldowns, host, error, attempt):
     if is_limit:
         return True
     if error.code in (500, 502, 503, 504):
-        time.sleep(delay(error, attempt))
+        cooldowns.pause(delay(error, attempt))
         return True
     return False

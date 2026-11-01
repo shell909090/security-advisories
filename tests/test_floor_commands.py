@@ -58,3 +58,25 @@ class FloorCommandTests(unittest.TestCase):
         products[0]['min_version'] = '999'
         refresh_catalog(state, products, 'high', [], dt.datetime.now(dt.timezone.utc))
         self.assertEqual(len(state['catalog']['one']['records']), 1)
+
+    def test_ignore_floor_is_temporary_and_all_preserves_history(self):
+        self.configure('2.0')
+        command(self.root, 'summary')
+        paths = [self.root / name for name in ('products.json', 'state.json', 'history.json')]
+        before = [path.read_bytes() for path in paths]
+        code, text, _ = command(self.root, 'summary', '--all', '--ignore-min-version')
+        self.assertEqual(code, 0)
+        self.assertIn('| ONE |', text)
+        self.assertEqual([path.read_bytes() for path in paths], before)
+        self.assertNotIn('| ONE |', command(self.root, 'summary', '--all')[1])
+        self.assertIn('| ONE |', command(self.root, 'summary', '--ignore-min-version')[1])
+        self.assertEqual(command(self.root, 'summary', '--ignore-min-version')[1], '')
+
+    def test_ignore_floor_skips_invalid_config_but_keeps_time_filter(self):
+        self.configure('bad')
+        catalog(self.root, [record(date='2020-01-01T00:00:00Z')])
+        code, text, _ = command(self.root, 'summary', '--all', '--ignore-min-version')
+        self.assertEqual(code, 0)
+        self.assertEqual(text, '')
+        self.assertIn('| ONE |', command(self.root, 'summary', '--all', '--history',
+                                         '--ignore-min-version')[1])

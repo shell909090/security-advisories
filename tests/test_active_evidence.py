@@ -48,7 +48,7 @@ class ActiveEvidenceTests(unittest.TestCase):
         self.assertEqual(row['severity'], 'high')
         self.assertFalse(row['withdrawn'])
         text = render([(PRODUCT, row)])
-        self.assertIn('| ONE | 0 | 1 |', text)
+        self.assertIn('| ONE | 0 | 0 | 1 |', text)
         self.assertIn('1.5', text)
         self.assertNotIn('2.0', text)
         self.assertNotIn('RCE', text)

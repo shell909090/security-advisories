@@ -16,7 +16,8 @@ from .http_cache import HttpCache
 class Client:
     def __init__(self, timeout=30, proxy=None):
         self.metrics = Metrics()
-        self.cooldowns = Cooldowns()
+        self.cancelled = threading.Event()
+        self.cooldowns = Cooldowns(self.cancelled)
         self.cache = HttpCache()
         self.timeout = timeout
         self.proxy = proxy
@@ -47,11 +48,12 @@ class Client:
         return host, headers, body
 
     def throttle(self, host):
+        self.cooldowns.check()
         self.cooldowns.wait(host)
         if host == 'services.nvd.nist.gov':
             with self.nvd_lock:
                 interval = 0.7 if os.environ.get('NVD_API_KEY') else 6.2
-                time.sleep(max(0, interval - (time.monotonic() - self.nvd_last)))
+                self.cooldowns.pause(max(0, interval - (time.monotonic() - self.nvd_last)))
                 self.nvd_last = time.monotonic()
 
     def json(self, url, params=None, data=None, with_link=False, source="unscoped"):
@@ -91,6 +93,9 @@ class Client:
             with self.session_lock:
                 self.sessions.append(session)
         return self.local.session
+
+    def cancel(self):
+        self.cancelled.set()
 
     def close(self):
         for session in self.sessions:
