@@ -53,8 +53,8 @@ class ActiveEvidenceTests(unittest.TestCase):
         self.assertNotIn('2.0', text)
         self.assertNotIn('RCE', text)
         detail = '\n'.join(render_row(1, row))
-        self.assertIn('已撤回（不参与汇总）', detail)
-        self.assertIn(old['description'], detail)
+        self.assertNotIn('已撤回（不参与汇总）', detail)
+        self.assertNotIn(old['description'], detail)
 
     def test_withdrawn_source_cannot_confirm_product_or_refresh_time(self):
         old, current = self.pair()

@@ -27,7 +27,7 @@ def catalog_rows(args):
 
 
 def warn_coverage(args, product, entry):
-    minimum = getattr(args, 'min_severity', getattr(args, 'severity', 'critical'))
+    minimum = getattr(args, 'min_severity', getattr(args, 'severity', 'critical')) or 'high'
     if LEVEL[minimum] < LEVEL[entry['min_severity']]:
         logging.getLogger(__name__).warning(f"{product['id']}: cache collected at {entry['min_severity']}; "
               f"run update --min-severity {minimum} for wider coverage")

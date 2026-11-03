@@ -10,7 +10,7 @@
 | --- | --- | --- |
 | `update` | `--product` 逗号分隔 ID，`--min-severity` 默认 high，`--sources` 选择源，`--days` 默认3；`--since`/`--history` 控制回溯 | 更新同步缓存和所选产品 catalog；stdout 为一行结果，stderr 为进度、逐源统计、错误；不修改摘要历史 |
 | `summary` | catalog；默认 high、近3天；可再筛产品/等级/时间；`--history` 取消时间窗口 | Markdown 产品表；默认更新已展示历史，重复无变化 stdout 为空；`--all` 不读写历史，`--shown` 仅读历史 |
-| `detail` | 必须一个产品和确切 `--severity`，默认近3天 | 该产品该级别时间范围内缓存活跃漏洞的 Markdown，不读写展示历史 |
+| `detail` | 必须一个产品，`--severity` 可选，默认 high + critical，默认近3天 | 该产品该级别时间范围内缓存活跃漏洞的 Markdown，不读写展示历史 |
 
 三者都有 `--products`、`--state`、`--output`；summary 另有 `--dedup-history`。退出码 0 成功，1 更新部分来源失败，2 参数或整体错误。输出文件不得覆盖配置、主状态、进度或所使用的展示历史。
 
@@ -142,7 +142,7 @@ affected 保留来源结构，不统一扁平化：
 
 evidence 为 `[{source:unit_key,...NormalizedRecord}]`。用传递闭包合并别名；同一编号不同源证据保留。官方 CVE/NVD rejected 优先认定撤回，否则所有证据撤回才整体撤回。catalog 中 products 被收窄到单产品数组。
 
-产品归属扫描跳过明确 `vulnerable:false` 的节点。未撤回证据才参与归属、评级、版本、标签、时间筛选和展示指纹；原始 evidence 及同步指纹仍完整保留，detail 标明每个来源是否撤回。官方 rejected 的整体撤回优先级不变。已有 catalog 在下次 update 时按新规则重建。
+产品归属扫描跳过明确 `vulnerable:false` 的节点。未撤回证据才参与归属、评级、版本、标签、时间筛选和展示指纹；原始 evidence 及同步指纹仍完整保留，detail 仅使用活跃来源生成简洁结论。官方 rejected 的整体撤回优先级不变。已有 catalog 在下次 update 时按新规则重建。
 
 fingerprint 为稳定 JSON（键排序、紧凑分隔、UTF-8）的 SHA-256 十六进制；内容含来源、ID/别名/产品、规范化空白后的标题/正文、评级、评分、affected、withdrawn、kind，不含时间和独立引用列表。
 
@@ -205,7 +205,7 @@ CVE 的 coverage 保存每产品独立 checkpoint/hash，取本次所选产品�
 
 键为 `product_id:advisory_alias`，所有别名都登记。展示 fingerprint 与合并指纹不同：排除 ID、别名、纯编号标题、时间、独立引用列表，保留来源及有效内容、汇总级别和撤回状态；防止只新增 CVE 编号就重复显示。只在输出成功后更新实际展示项。旧 version:1 历史无法证明按产品展示，视为新历史并在下一次成功展示时写 version:2；其他未知版本报错。
 
-summary 直接输出 Markdown 表格，不输出标题或前置说明段落。表列为：产品、Critical、High、受影响版本/组件、公告修复版本、证据标签。计数基于本次选择项；空结果返回空字符串。detail Markdown 按漏洞分节，列别名/级别/标签、版本证据表，再按来源展示时间、评分 JSON、URL、引用格式正文和 affected JSON。
+summary 直接输出 Markdown 表格，不输出标题或前置说明段落。表列为：产品、Critical、High、受影响版本/组件、公告修复版本、证据标签。计数基于本次选择项；空结果返回空字符串。detail Markdown 在时间范围后按漏洞 ID 列出描述，选择首个具有非空 description 的活跃来源，以引用保留原文段落；无描述显示“暂无原始描述”。不拼接多个来源，不序列化证据对象。末尾使用四列表格：漏洞 ID、受影响版本、后果、原始链接。版本按组件合并重复范围并分行展示，可解析的 CPE 展示版本及更新标记；后果使用已有保守标签规则，排除 UAF 等缺陷类型并翻译为中文，无结论显示未知。链接取首个有 URL 的活跃来源。默认筛选 high/critical 派生优先级，显式 severity 仍精确匹配；本地格式不变。
 
 版本提取支持前述主要结构；CPE 排除上界不直接等同修复版；Chrome 正文明确 prior to VERSION 可补充修复边界。项目 patched_versions 和全局 first_patched_version 均支持。保留分支/平台；无法确认时标未知，不靠版本字符串大小合并成“全部修复版本”。
 
@@ -299,7 +299,7 @@ unit 新增可选 known_checked_at 对象：键为 CVE ID，值为最近成功�
 
 ## 摘要版本的产品隔离
 
-摘要提取版本前按结构化归属筛选：GHSA/OSV 包按生态与包名匹配配置（支持生态别名及包名规范化）；CVE 按产品名、别名及厂商匹配；NVD 按 CPE 产品及厂商匹配。已匹配产品节点内的组件、平台和范围事件继承归属，不按扁平标签猜测。明确属于其他产品的子树排除，无法确认归属的范围不进入摘要。Chrome 正文版本提取只用于 Chrome 产品。detail 保留完整来源版本与原始证据以供核查；不修改缓存格式。
+摘要提取版本前按结构化归属筛选：GHSA/OSV 包按生态与包名匹配配置（支持生态别名及包名规范化）；CVE 按产品名、别名及厂商匹配；NVD 按 CPE 产品及厂商匹配。已匹配产品节点内的组件、平台和范围事件继承归属，不按扁平标签猜测。明确属于其他产品的子树排除，无法确认归属的范围不进入摘要。Chrome 正文版本提取只用于 Chrome 产品。detail 按当前产品整理版本，原始证据保留在缓存；不修改缓存格式。
 
 ## CVE 检查索引共享作用域
 
@@ -324,3 +324,5 @@ vendorProject/product 转为 affected 的 vendor/product 确认归属。severity
 ## 更新取消与等待诊断
 
 调度器每30秒记录尚未完成的任务。首次 Ctrl-C 设置 HTTP 取消事件，唤醒限流及重试等待，取消尚未启动的任务，等待在途请求返回后退出。正在执行的网络请求仍受 timeout 约束，并非强制杀线程。保存已交付成功任务及 HTTP 缓存，未完成来源标记 interrupted、保留原检查点；CVE 批次进度继续保留。update 返回130，不修改展示历史。
+
+所有子命令共享 `-p` / `--product` 和 `-d` / `--days` 别名，分别解析为 product 和 days 字段；默认值、校验及时间参数互斥规则保持不变。

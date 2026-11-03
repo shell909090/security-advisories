@@ -1,47 +1,67 @@
-"""Read-only Markdown evidence for all vulnerabilities at an exact severity."""
-import json
-from .evidence import is_kev
+"""Concise offline vulnerability details; source evidence stays in the cache."""
+import re
+from .evidence import active_evidence
 from .impact import impact_tags
-from .reporting import compact
 from .summary import cell
 from .versions import version_facts
+from .version_summary import component_label
+from .version_ranges import merge_spans
+
+CONSEQUENCES = {
+    'Crash': '崩溃', 'DoS': '拒绝服务', 'Sandbox Escape': '沙箱逃逸',
+    'Privilege Escalation': '权限提升', 'File Read': '文件读取',
+    'File Write': '任意文件写入', 'Code Execution': '代码执行', 'RCE': '远程代码执行',
+}
 
 
-def render_evidence(evidence):
-    lines = [f"### 来源：{cell(evidence.get('source', 'unknown'))}", '',
-             f"发布时间：{cell(evidence.get('published') or '未知')}；"
-             f"更新时间：{cell(evidence.get('modified') or '未知')}", '',
-             f"来源状态：{'已撤回（不参与汇总）' if evidence.get('withdrawn') else '有效'}", '',
-             f"来源等级：{cell(evidence.get('severity', 'unknown'))}", '',
-             '评分：' + cell(json.dumps(evidence.get('scores', []), ensure_ascii=False)), '',
-             '原始链接：' + cell(evidence.get('url') or '未知'), '']
-    lines.extend('> ' + line for line in (evidence.get('description') or '无正文').splitlines())
-    lines.extend(['', '受影响范围原始证据：', ''])
-    lines.extend('> ' + line for line in json.dumps(evidence.get('affected', []), ensure_ascii=False, indent=2).splitlines())
+def readable_span(span):
+    if span.startswith('cpe:2.3:'):
+        parts = span.split(':')
+        if len(parts) < 7 or parts[5] in ('*', '-'):
+            return '未知'
+        return parts[5] + (f' {parts[6]}' if parts[6] not in ('*', '-') else '')
+    if re.match(r'^[A-Za-z]', span):
+        return f'待核实（来源版本文本：{span}）'
+    span = re.sub(r'^(?:\*|>= 0),\s*', '', span)
+    match = re.fullmatch(r'>= (.+), (<|<=) (.+)', span)
+    if match:
+        lower, operator, upper = match.groups()
+        return f'{lower} ≤ 版本 {"≤" if operator == "<=" else "<"} {upper}'
+    return span.replace('<=', '≤').replace('>=', '≥')
+
+
+def affected_versions(row, product=None):
+    groups = {}
+    for span, _, component, _ in version_facts(row, product):
+        label = component_label(component, product or {'id': '产品'})
+        groups.setdefault(label, set()).add(span)
+    return '<br>'.join(f'{cell(component)}: {cell(readable_span(span))}'
+                      for component, spans in sorted(groups.items())
+                      for span in merge_spans(spans)) or '未知'
+
+
+def render_row(index, row, product=None):
+    consequences = '、'.join(CONSEQUENCES[tag] for tag in impact_tags(row)
+                            if tag in CONSEQUENCES) or '未知'
+    url = next((item['url'] for item in active_evidence(row) if item.get('url')), '未知')
+    values = [cell(row['id']), affected_versions(row, product), cell(consequences), cell(url)]
+    return ['| ' + ' | '.join(values) + ' |']
+
+
+def render_description(row):
+    description = next((item['description'].strip() for item in active_evidence(row)
+                        if (item.get('description') or '').strip()), '暂无原始描述')
+    lines = [f"## {cell(row['id'])}", '']
+    lines.extend('> ' + line for line in description.splitlines())
     return lines + ['']
 
 
-def render_row(index, row):
-    compacted = compact(row, 'detail')
-    lines = [f"## {index}. {cell(row['id'])} — {cell(compacted['title'])}", '',
-             '编号/别名：' + ', '.join(row['aliases']), '',
-             f"汇总等级：{row['severity']}（未撤回来源最高值，可能与厂商评级不同）", '',
-             '证据标签：' + (', '.join(impact_tags(row)) or '未知/待核实'), '',
-             '| 组件/平台 | 受影响范围 | 修复版本 | 来源 |', '| --- | --- | --- | --- |']
-    if is_kev(row):
-        lines[4:4] = ['KEV：已知被利用，按 Critical 优先级处理；以下保留原始严重性和评分。', '']
-    facts = version_facts(row) or [('未知', '未知', '未知', '未知')]
-    lines.extend('| ' + ' | '.join(cell(v) for v in (component, span, fix, source)) + ' |'
-                 for span, fix, component, source in facts)
-    lines.append('')
-    for evidence in row['evidence']:
-        lines.extend(render_evidence(evidence))
-    return lines
-
-
-def render(product, severity, rows, period='全部历史'):
-    lines = [f"# {cell(product)} / {severity}：{len(rows)} 个漏洞", '',
-             f'时间范围：{period}（按发布时间或更新时间）；不受展示历史限制。', '']
+def render(product, severity, rows, period='全部历史', config=None):
+    lines = [f'# {cell(product)} / {severity}：{len(rows)} 个漏洞', '',
+             f'时间范围：{period}（按发布时间或更新时间）', '']
+    for row in rows:
+        lines.extend(render_description(row))
+    lines.extend(['## 总结', '', '| 漏洞 ID | 受影响版本 | 后果 | 原始链接 |', '| --- | --- | --- | --- |'])
     for index, row in enumerate(rows, 1):
-        lines.extend(render_row(index, row))
+        lines.extend(render_row(index, row, config))
     return '\n'.join(lines) + '\n'

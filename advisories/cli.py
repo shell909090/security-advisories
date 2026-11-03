@@ -13,14 +13,14 @@ LEVELS = ['low', 'medium', 'high', 'critical']
 def common(parser):
     parser.add_argument('--products', type=Path, default=ROOT / 'products.json', help='Product configuration file')
     parser.add_argument('--state', type=Path, default=ROOT / 'state.json')
-    parser.add_argument('--product', help='Product ID; comma-separated for update/summary')
+    parser.add_argument('-p', '--product', help='Product ID; comma-separated for update/summary')
     parser.add_argument('--output', type=Path)
 
 
 def update_options(parser):
     parser.add_argument('--sources', help='Comma-separated source names; default all')
     parser.add_argument('--min-severity', choices=LEVELS, default='high')
-    parser.add_argument('--days', type=float, default=3)
+    parser.add_argument('-d', '--days', type=float, default=3)
     parser.add_argument('--since', help='Explicit ISO collection start')
     parser.add_argument('--overlap-days', type=float, default=2)
     parser.add_argument('--history', action='store_true', help='Backfill full history where supported')
@@ -35,7 +35,7 @@ def summary_options(parser):
     parser.add_argument('--ignore-min-version', action='store_true',
                         help='Skip configured minimum-version filtering for this summary')
     parser.add_argument('--min-severity', choices=LEVELS, default='high')
-    parser.add_argument('--days', type=float, default=3)
+    parser.add_argument('-d', '--days', type=float, default=3)
     parser.add_argument('--history', action='store_true', help='Remove time filter')
     parser.add_argument('--dedup-history', type=Path, default=ROOT / 'history.json')
     mode = parser.add_mutually_exclusive_group()
@@ -54,7 +54,7 @@ def build_parser():
         elif name == 'summary':
             summary_options(sub)
         else:
-            sub.add_argument('--severity', choices=LEVELS, required=True)
+            sub.add_argument('--severity', choices=LEVELS)
             detail_options(sub)
     return parser
 
@@ -74,6 +74,6 @@ def main(argv=None):
 
 def detail_options(parser):
     period = parser.add_mutually_exclusive_group()
-    period.add_argument('--days', type=float, default=3, help='Published or updated within N days (default: 3)')
+    period.add_argument('-d', '--days', type=float, default=3, help='Published or updated within N days (default: 3)')
     period.add_argument('--since', type=parse_time, help='Published or updated since ISO timestamp (UTC if no zone)')
     period.add_argument('--history', action='store_true', help='Remove time filter')

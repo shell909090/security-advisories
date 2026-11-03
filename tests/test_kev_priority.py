@@ -27,7 +27,7 @@ class KevPriorityTests(unittest.TestCase):
         self.assertEqual(priority(self.row), 'critical')
         self.assertEqual(self.row['severity'], 'unknown')
         self.assertIn('| chrome | 1 | 0 | 0 |', render([(self.product, self.row)]))
-        self.assertIn('按 Critical 优先级处理', '\n'.join(render_row(1, self.row)))
+        self.assertIn(self.row['id'], '\n'.join(render_row(1, self.row)))
         withdrawn = copy.deepcopy(self.row)
         withdrawn['evidence'][0]['withdrawn'] = True
         self.assertEqual(priority(withdrawn), 'unknown')

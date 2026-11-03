@@ -20,7 +20,8 @@ uv run python main.py summary --all
 uv run python main.py summary --history --all
 uv run python main.py summary --shown     # 仅已展示，不修改历史
 
-# 指定产品和确切级别，默认近3天发布或更新，Markdown 格式
+# 指定产品，默认 High + Critical、近3天，原始描述摘要 + 四列总结表
+uv run python main.py detail --product cpython
 uv run python main.py detail --product chrome --severity critical
 uv run python main.py detail --product chrome --severity high --days 7
 uv run python main.py detail --product chrome --severity high --history # 全部历史
@@ -29,7 +30,7 @@ uv run python main.py detail --product chrome --severity high --output /tmp/chro
 make check                               # 测试 + 所有质量门限
 ```
 
-每个子命令支持 `--products 配置路径`、`--state 缓存路径`、`--output 输出路径`。产品筛选用 `--product 产品ID[,产品ID]`；detail 只能选择一个产品。详细参数用 `uv run python main.py 子命令 --help`。
+每个子命令支持 `--products 配置路径`、`--state 缓存路径`、`--output 输出路径`。产品筛选用 `--product 产品ID[,产品ID]`（可缩写为 `-p`）；detail 只能选择一个产品。详细参数用 `uv run python main.py 子命令 --help`。
 
 ## Summary
 
@@ -45,9 +46,9 @@ make check                               # 测试 + 所有质量门限
 
 ## 更新与收录范围
 
-update 决定产品和最低收录级别，summary 只能二次收窄。降低 summary 门槛不会联网补抓，缓存门槛不足会在 stderr 提示重新 update。detail 的 `--severity high` 精确匹配 High，不包含 Critical。
+update 决定产品和最低收录级别，summary 只能二次收窄。降低 summary 门槛不会联网补抓，缓存门槛不足会在 stderr 提示重新 update。detail 默认包含 High + Critical；可选的 `--severity high` 精确匹配 High，不包含 Critical。详情先逐条展示漏洞原始描述，最后展示漏洞 ID、受影响版本、后果和原始链接的总结表；不输出评分、JSON 或证据明细。
 
-`--days` 默认 3，控制首次或配置变化时的回溯；已有进度时从检查点向前重叠 `--overlap-days 2` 天抓取。`--since` 显式指定开始时间。`--history` 回补支持历史查询的数据源，CVE 官方滚动日志超过覆盖窗口会明确报错，不能自动回补全库。
+`--days` 可缩写为 `-d`，默认 3，控制首次或配置变化时的回溯；已有进度时从检查点向前重叠 `--overlap-days 2` 天抓取。`--since` 显式指定开始时间。`--history` 回补支持历史查询的数据源，CVE 官方滚动日志超过覆盖窗口会明确报错，不能自动回补全库。
 
 更新所选产品不会删除其他产品。`state.json` 的同步证据用于合并别名、等级变化和撤回，可能包含未达收录门槛的原始记录；`catalog` 才是 summary/detail 可读取的按产品、级别收录目录。旧格式缓存仍可供 update 增量使用，但需要先运行一次 update 建立目录，显示命令不会擅自导入旧数据。旧版输出历史不等于新版摘要展示历史，首次 summary 会重建其版本。
 

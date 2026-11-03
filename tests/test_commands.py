@@ -34,6 +34,18 @@ class CommandTests(unittest.TestCase):
         self.assertNotIn('GHSA-high', text)
         self.assertEqual((self.root / 'history.json').read_bytes(), history)
 
+    def test_detail_default_levels_and_concise_output(self):
+        catalog(self.root, [record(), record('GHSA-high', severity='high'),
+                            record('GHSA-low', severity='low')])
+        code, text, _ = command(self.root, 'detail', '--product', 'one')
+        self.assertEqual(code, 0)
+        self.assertIn('GHSA-test', text)
+        self.assertIn('GHSA-high', text)
+        self.assertNotIn('GHSA-low', text)
+        self.assertIn('远程代码执行', text)
+        self.assertNotIn('评分', text)
+        self.assertNotIn('原始证据', text)
+
     def test_filtered_records_not_marked_and_read_modes(self):
         catalog(self.root, [record(), record('GHSA-two', product='two'), record('GHSA-high', severity='high')])
         command(self.root, 'summary', '--product', 'one', '--min-severity', 'critical')

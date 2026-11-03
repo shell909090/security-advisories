@@ -24,12 +24,12 @@ class DetailTimeTests(unittest.TestCase):
             self.assertIn('changed', text)
             for ident in ('old', 'unknown', 'future'):
                 self.assertNotIn(f'— {ident}', text)
-                self.assertNotIn(f'编号/别名：{ident}', text)
-            self.assertIn('编号/别名：old', command(root, *args, '--days', '7')[1])
+                self.assertNotIn(f'| {ident}', text)
+            self.assertIn('| old', command(root, *args, '--days', '7')[1])
             since = (now - dt.timedelta(days=6)).isoformat()
-            self.assertIn('编号/别名：old', command(root, *args, '--since', since)[1])
+            self.assertIn('| old', command(root, *args, '--since', since)[1])
             full = command(root, *args, '--history')[1]
-            self.assertIn('编号/别名：unknown', full)
+            self.assertIn('| unknown', full)
             self.assertFalse((root / 'history.json').exists())
 
     def test_invalid_time_options(self):
