@@ -9,7 +9,7 @@
 | 命令 | 输入与作用 | 输出及状态影响 |
 | --- | --- | --- |
 | `update` | `--product` 逗号分隔 ID，`--min-severity` 默认 high，`--sources` 选择源，`--days` 默认3；`--since`/`--history` 控制回溯 | 更新同步缓存和所选产品 catalog；stdout 为一行结果，stderr 为进度、逐源统计、错误；不修改摘要历史 |
-| `summary` | catalog；默认 high、近3天；可再筛产品/等级/时间；`--history` 取消时间窗口 | Markdown 产品表；默认更新已展示历史，重复无变化 stdout 为空；`--all` 不读写历史，`--shown` 仅读历史 |
+| `summary` | catalog；默认 critical、近3天；可再筛产品/等级/时间；`--history` 取消时间窗口 | Markdown 产品表；默认更新已展示历史，重复无变化 stdout 为空；`--all` 不读写历史，`--shown` 仅读历史 |
 | `detail` | 必须一个产品，`--severity` 可选，默认 high + critical，默认近3天 | 该产品该级别时间范围内缓存活跃漏洞的 Markdown，不读写展示历史 |
 
 三者都有 `--products`、`--state`、`--output`；summary 另有 `--dedup-history`。退出码 0 成功，1 更新部分来源失败，2 参数或整体错误。输出文件不得覆盖配置、主状态、进度或所使用的展示历史。

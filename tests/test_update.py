@@ -47,7 +47,7 @@ class UpdateTests(unittest.TestCase):
             self.assertEqual(command(self.root, 'update', '--min-severity', 'high')[0], 1)
         state = json.loads((self.root / 'state.json').read_text())
         self.assertEqual(state['units']['mock:one']['checkpoint'], old)
-        code, text, errors = command(self.root, 'summary')
+        code, text, errors = command(self.root, 'summary', '--min-severity', 'high')
         self.assertEqual(code, 0)
         self.assertIn('| ONE |', text)
         self.assertIn('source failures', errors)

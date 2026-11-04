@@ -34,7 +34,7 @@ def update_options(parser):
 def summary_options(parser):
     parser.add_argument('--ignore-min-version', action='store_true',
                         help='Skip configured minimum-version filtering for this summary')
-    parser.add_argument('--min-severity', choices=LEVELS, default='high')
+    parser.add_argument('--min-severity', choices=LEVELS, default='critical')
     parser.add_argument('-d', '--days', type=float, default=3)
     parser.add_argument('--history', action='store_true', help='Remove time filter')
     parser.add_argument('--dedup-history', type=Path, default=ROOT / 'history.json')

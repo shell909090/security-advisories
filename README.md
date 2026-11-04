@@ -11,7 +11,7 @@ uv run python main.py update --min-severity high
 # 只更新指定产品；默认最低级别为 High（包含 Critical）
 uv run python main.py update --product chrome,uv --min-severity high --days 3
 
-# 离线摘要：默认近 3 天、High + Critical、仅未展示/内容有变化的条目
+# 离线摘要：默认近 3 天、仅 Critical、仅未展示/内容有变化的条目
 uv run python main.py summary
 uv run python main.py summary --product chrome --min-severity critical --days 7
 
