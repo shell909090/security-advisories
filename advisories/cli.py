@@ -2,7 +2,7 @@
 import argparse
 import logging
 from pathlib import Path
-from . import update, views
+from . import update, views, migration
 from .locking import locked
 from .validation import validate
 from .source_common import parse_time
@@ -47,14 +47,14 @@ def summary_options(parser):
 def build_parser():
     parser = argparse.ArgumentParser(description='Collect and inspect product security advisories')
     commands = parser.add_subparsers(dest='command', required=True)
-    for name in ('update', 'summary', 'detail'):
+    for name in ('update', 'summary', 'detail', 'migrate-state'):
         sub = commands.add_parser(name)
         common(sub)
         if name == 'update':
             update_options(sub)
         elif name == 'summary':
             summary_options(sub)
-        else:
+        elif name == 'detail':
             sub.add_argument('--severity', choices=LEVELS)
             detail_options(sub)
     return parser
@@ -67,7 +67,8 @@ def main(argv=None):
     validate(parser, args)
     try:
         with locked(args):
-            return {'update': update.run, 'summary': views.summary, 'detail': views.detail}[args.command](args)
+            return {'update': update.run, 'summary': views.summary, 'detail': views.detail,
+                    'migrate-state': migration.run}[args.command](args)
     except Exception as exc:
         logging.getLogger(__name__).error(f'{exc}')
         return 2

@@ -1,6 +1,7 @@
 """JSON persistence and selected product configuration."""
 import json
 from .cache_storage import load_cache, save_cache
+from .sqlite_storage import is_sqlite, load_sqlite, save_sqlite
 from .inspection_storage import pack, unpack, transform_state
 
 
@@ -26,8 +27,8 @@ def load_products(args):
     return [p for p in products if p['id'] in selected]
 
 
-def load_state(path, with_http=False):
-    state = read_json(path, {'version': 1, 'units': {}})
+def load_state(path, with_http=False, products=None):
+    state = load_sqlite(path, products) if is_sqlite(path) else read_json(path, {'version': 1, 'units': {}})
     if state.get('version') != 1:
         raise ValueError('Unsupported state version')
     inline = state.pop('http_cache', None)
@@ -49,4 +50,7 @@ def save_state(path, state):
     entries = packed.pop('http_cache', None)
     if entries is not None:
         save_cache(path, entries)
-    atomic_json(path, packed)
+    if is_sqlite(path):
+        save_sqlite(path, packed)
+    else:
+        atomic_json(path, packed)

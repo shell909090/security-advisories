@@ -131,3 +131,17 @@ HTTP 条件缓存独立保存在 `<state所在目录>/http-cache.json.gz`，仅 
 更新等待时每30秒显示未完成任务。按一次 Ctrl-C 会取消后续请求，等待在途请求结束后保存已完成来源并以130退出；请等待保存完成，重复 Ctrl-C 或强杀仍可能跳过保存。
 
 summary --list 提供窄屏列表：每个软件依次输出名称、KEV/Critical/High 个数、受影响版本、公告修复版本、后果，共五行加一个空行。软件名前加 `## `，其余四行前加 `- `。长行自然折行，内容换行折叠为空格。复用产品分组、版本汇总和中文后果映射；缺失后果显示未知。筛选和展示历史规则不变，查看已展示内容可加 --all。
+
+### SQLite 状态存储
+
+需要 Python 所链接的 SQLite >= 3.45（支持 JSONB）。转换保留原文件、不联网，目标必须不存在且与源文件在同一目录：
+
+```bash
+uv run main.py migrate-state --state state.json --output state.sqlite
+uv run main.py summary --state state.sqlite --list --all
+uv run main.py update --state state.sqlite
+```
+
+后续命令需继续指定 `--state state.sqlite`；默认仍使用旧 `state.json`。SQLite 按文档增量写入，显示命令只加载选中产品的 catalog；这一版 update 仍加载完整运行时状态。展示历史和 HTTP 缓存沿用同目录原文件，CVE 续传进度在迁移时复制到新状态对应路径。请勿交替更新新旧状态，以免两份缓存逐渐分叉。
+
+SQLite 在每次状态保存后自动执行 VACUUM 回收空间；summary/detail 不写数据库。若空间回收失败会输出警告，已经提交的更新仍然保留。

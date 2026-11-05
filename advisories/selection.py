@@ -12,7 +12,7 @@ from .storage import load_products, load_state, read_json
 
 def catalog_rows(args):
     products = load_products(args)
-    state = load_state(args.state)
+    state = load_state(args.state, products=[product['id'] for product in products])
     if 'catalog' not in state:
         raise ValueError('No admission catalog; run update first')
     result = []

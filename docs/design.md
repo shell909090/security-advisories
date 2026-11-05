@@ -332,3 +332,15 @@ vendorProject/product 转为 affected 的 vendor/product 确认归属。severity
 summary --list 提供窄屏列表：每个软件依次输出名称、KEV/Critical/High 个数、受影响版本、公告修复版本、后果，共五行加一个空行。软件名前加 `## `，其余四行前加 `- `。长行自然折行，内容换行折叠为空格。复用产品分组、版本汇总和中文后果映射；缺失后果显示未知。筛选和展示历史规则不变，查看已展示内容可加 --all。
 
 HTTP 缓存运行时采用写时替换：初始化仅复制索引，prepare 仅复制条目元数据，正文由旧快照与当前缓存共享并视为只读。304 更新访问时间时创建新条目，不修改旧快照；交给调用者的正文仍深拷贝，200 存入的正文也深拷贝，防止调用者修改污染缓存。输入缓存及 snapshot 返回值仅供只读使用；失败来源仍恢复旧快照。磁盘格式不变。
+
+## SQLite 状态格式（第一版）
+
+SQLite 后端由 .sqlite/.db 扩展名选择，需要 SQLite >= 3.45 的 JSONB 功能，启动连接时检查；不新增 Python 依赖。默认仍为 state.json，显式 --state 使用新文件。SQLite application_id=1396786244，user_version=1；逻辑状态 version 仍为1，JSON 路径与嵌套结构不变。
+
+nodes 表：path TEXT PRIMARY KEY、kind TEXT（dict/list/value）、body BLOB（SQLite JSONB），使用普通 rowid 表以减少大 JSONB 文档的溢出页浪费。path 是键/列表下标组成的紧凑 JSON 数组；dict/list 的 body 是有序子键数组，value 的 body 是该节点完整 JSON。根对象、units/catalog/source_caches 容器及各来源/产品容器拆分；unit 的 records/cve_seen/known_checked_at、catalog records、source_caches 的 details/indexes 按条目拆分。其他复杂字段作为独立 JSONB 文档。CVE 检查范围仍采用现有 pack/unpack 引用格式。
+
+保存以事务 upsert 节点，仅内容或 kind 改变时写入；临时表记录存活路径并删除过期节点。检查点与全部业务状态同一事务提交，失败回滚。HTTP 缓存仍先写独立旁文件，与现有跨文件失败语义相同；目录排他锁不变。读取使用只读连接，逐节点解码；summary/detail 仅读取根目录元数据、catalog 容器及指定产品子树，不读取其他来源或 HTTP 缓存。update 当前仍还原完整运行时状态；完全按批次加载和证据正文去重留待后续优化。
+
+migrate-state --state old.json --output new.sqlite 仅允许同目录、目标与其 SQLite 辅助文件/续传文件均不存在；沿用目录锁。转换完整原始逻辑状态（包括旧内嵌 HTTP 缓存），校验 integrity_check 与反序列化一致性，复制旧 CVE 续传文件到新路径。失败删除本次新建文件；源 JSON、共享 HTTP 旁文件和展示历史不修改。默认回滚日志模式，不启用 WAL。输出路径不能碰撞 SQLite -journal/-wal/-shm 文件。运行时 SQLite 及辅助文件不入库。
+
+SQLite 每次保存（含 update 与迁移）在业务事务提交后、目录锁释放前执行 VACUUM，回收空闲页并整理文件。事务失败不执行 VACUUM；VACUUM 失败仅记录 warning，不撤销或误报已提交的检查点。summary/detail 使用 mode=ro，不执行空间回收。VACUUM 会重写数据库，故增量 SQL 写入不代表整个保存过程仅有增量磁盘 I/O；耗时计入 update 总耗时。

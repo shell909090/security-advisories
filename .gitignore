@@ -8,3 +8,8 @@ __pycache__/
 *.http-cache.json.gz.new
 http-cache.json.gz
 http-cache.json.gz.new
+*.sqlite
+*.db
+*-journal
+*-wal
+*-shm
