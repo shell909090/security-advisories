@@ -145,3 +145,16 @@ uv run main.py update --state state.sqlite
 后续命令需继续指定 `--state state.sqlite`；默认仍使用旧 `state.json`。SQLite 按文档增量写入，显示命令只加载选中产品的 catalog；这一版 update 仍加载完整运行时状态。展示历史和 HTTP 缓存沿用同目录原文件，CVE 续传进度在迁移时复制到新状态对应路径。请勿交替更新新旧状态，以免两份缓存逐渐分叉。
 
 SQLite 在每次状态保存后自动执行 VACUUM 回收空间；summary/detail 不写数据库。若空间回收失败会输出警告，已经提交的更新仍然保留。
+
+### NVD 部分更新
+
+update 默认每次更新选中 NVD 产品的三分之一（向上取整）。缺失、配置变化或满72小时未检查的产品必选，允许超额；不足时按上次成功更新的 UTC 日期从旧到新补选，同一天内随机抽取。空结果也算成功检查，跳过不推进检查点。每次运行都有独立配额，同日多次运行不扣除已更新数量。
+
+```bash
+# 默认部分更新
+uv run main.py update --state state.sqlite
+# 本次强制检查所有选中的 NVD 产品
+uv run main.py update --state state.sqlite --nvd-full
+```
+
+--nvd-full 不改变时间窗口，也不下载整个 NVD 数据库；--since/--history 显式回补时同样不抽样。其他来源不受影响，日志会显示 NVD 选中/跳过数量。

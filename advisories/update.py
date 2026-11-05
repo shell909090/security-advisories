@@ -8,6 +8,7 @@ from .collector import collect_job, collection_jobs, execute_jobs, known_cves
 from .http_client import Client
 from .http_cache import HttpCache
 from .records import merge_records
+from .nvd_sampling import select_jobs
 from .checkpoints import cve_scope
 from .product_identity import product_confirmed
 from .reporting import LEVEL
@@ -39,7 +40,7 @@ def run(args):
     config_hash = cve_scope(products)
     until = dt.datetime.now(dt.timezone.utc)
     available = discover()
-    jobs = collection_jobs(args, available, products, state)
+    jobs = select_jobs(collection_jobs(args, available, products, state), args, until)
     errors, completed = [], []
     started = time.monotonic()
     client = Client(args.timeout, args.proxy)

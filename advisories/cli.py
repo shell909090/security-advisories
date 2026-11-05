@@ -26,6 +26,8 @@ def update_options(parser):
     parser.add_argument('--history', action='store_true', help='Backfill full history where supported')
     parser.add_argument('--jobs', type=int, default=6)
     parser.add_argument('--workers', type=int, default=8)
+    parser.add_argument('--nvd-full', action='store_true',
+                        help='Refresh all selected NVD products; default targets one third, oldest dates first')
     parser.add_argument('--cve-bundle', choices=['auto', 'off'], default='auto')
     parser.add_argument('--timeout', type=float, default=30)
     parser.add_argument('--proxy')

@@ -344,3 +344,11 @@ nodes 表：path TEXT PRIMARY KEY、kind TEXT（dict/list/value）、body BLOB�
 migrate-state --state old.json --output new.sqlite 仅允许同目录、目标与其 SQLite 辅助文件/续传文件均不存在；沿用目录锁。转换完整原始逻辑状态（包括旧内嵌 HTTP 缓存），校验 integrity_check 与反序列化一致性，复制旧 CVE 续传文件到新路径。失败删除本次新建文件；源 JSON、共享 HTTP 旁文件和展示历史不修改。默认回滚日志模式，不启用 WAL。输出路径不能碰撞 SQLite -journal/-wal/-shm 文件。运行时 SQLite 及辅助文件不入库。
 
 SQLite 每次保存（含 update 与迁移）在业务事务提交后、目录锁释放前执行 VACUUM，回收空闲页并整理文件。事务失败不执行 VACUUM；VACUUM 失败仅记录 warning，不撤销或误报已提交的检查点。summary/detail 使用 mode=ro，不执行空间回收。VACUUM 会重写数据库，故增量 SQL 写入不代表整个保存过程仅有增量磁盘 I/O；耗时计入 update 总耗时。
+
+## NVD 部分更新调度
+
+update 在生成 collection_jobs 后、提交执行前，对 NVD 产品任务调用 nvd_sampling.select_jobs，以本轮 until 为统一时间。目标为 (N + 2) // 3，其中 N 为本次产品/来源筛选后的 NVD 任务数。eligible_day 在 --nvd-full、--since、--history，或 collection_hash 与当前 identity 不符、checkpoint 缺失/非法/未来/距今 >= 72小时的情况下返回 None（必选）；其余返回 checkpoint 转为 UTC 后的 date，不使用时分秒排序。
+
+先收集全部必选键，再用 max(0, 目标 - 必选数) 个名额按日期升序补足。整组可以容纳时全部选择；遇到人数超过剩余名额的组，用 random.sample 无放回抽取，随后停止。最终保留原任务顺序，非 NVD 任务原样保留。每次调用独立计算配额，不保存每日计数；同日再次运行仍有完整配额，同一日期桶内允许再次选中当天已更新过的产品。产品子集按子集大小计算目标。
+
+新鲜度仅依据完整成功检查点，与记录数量、公告日期、严重等级无关。跳过任务不调用来源适配器，不计作完成或失败，不修改 unit 的 records、known_checked_at、checkpoint、collection_hash。入选后沿用原窗口、失败检查点和 NVD 复查规则，失败不推进检查点。策略不写入 collection_hash，无新增持久化格式。日志逐项记录跳过，并汇总目标/选中/跳过数量；summary/detail 无变化。配额约束产品数，不保证请求数等于全量的三分之一。
