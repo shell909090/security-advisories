@@ -50,7 +50,7 @@ update 决定产品和最低收录级别，summary 只能二次收窄。降低 s
 
 `--days` 可缩写为 `-d`，默认 3，控制首次或配置变化时的回溯；已有进度时从检查点向前重叠 `--overlap-days 2` 天抓取。`--since` 显式指定开始时间。`--history` 回补支持历史查询的数据源，CVE 官方滚动日志超过覆盖窗口会明确报错，不能自动回补全库。
 
-更新所选产品不会删除其他产品。`state.json` 的同步证据用于合并别名、等级变化和撤回，可能包含未达收录门槛的原始记录；`catalog` 才是 summary/detail 可读取的按产品、级别收录目录。旧格式缓存仍可供 update 增量使用，但需要先运行一次 update 建立目录，显示命令不会擅自导入旧数据。旧版输出历史不等于新版摘要展示历史，首次 summary 会重建其版本。
+更新所选产品不会删除其他产品。`state.sqlite` 的同步证据用于合并别名、等级变化和撤回，可能包含未达收录门槛的原始记录；`catalog` 才是 summary/detail 可读取的按产品、级别收录目录。旧格式缓存仍可供 update 增量使用，但需要先运行一次 update 建立目录，显示命令不会擅自导入旧数据。旧版输出历史不等于新版摘要展示历史，首次 summary 会重建其版本。
 
 来源：
 
@@ -69,7 +69,7 @@ GitHub 凭据读取 `GH_TOKEN` 或 `GITHUB_TOKEN`，NVD 可用 `NVD_API_KEY`，�
 ## 文件与开发
 
 - `products.json`：关注产品配置。`packages` 允许空数组，浏览器等依靠 CVE/NVD 或项目公告。
-- `state.json`：同步缓存、成功进度、收录目录。
+- `state.sqlite`：默认主状态，保存同步缓存、成功进度、收录目录；旧 JSON 可用 `--state state.json` 显式指定。
 - `history.json`：摘要展示指纹，不是通知投递确认。
 - `advisories/`：CLI、采集调度、过滤/展示、版本/后果提取及 `sources/` 插件。
 - `tests/`：回归测试；`scripts/check_quality.py`：静态门禁。
@@ -97,9 +97,9 @@ make check         # 测试 + 静态指标（默认目标）
 
 普通来源检查点按产品和相关配置隔离；CVE 保存每产品覆盖时间与匹配配置。切换更新产品子集或最低等级，不再重置无关产品的同步进度。首次从旧 collection_hash 缺失的缓存迁移，会按回溯窗口重新建立检查点一次。
 
-CVE 已检查索引保存 modified、checked_at、products；清理依据本地成功检查时间，避免延迟入库的旧公告反复下载。OSV 共享索引/原始详情缓存位于 `state.json.source_caches.osv`。
+CVE 已检查索引保存 modified、checked_at、products；清理依据本地成功检查时间，避免延迟入库的旧公告反复下载。OSV 共享索引/原始详情缓存位于 主状态的 `source_caches.osv`。
 
-每轮 stderr 输出每源 requests、response_bytes、retries、http_errors、cache_hits、not_modified、new/changed/unchanged/removed，并保存到 `state.json.last_update`。response_bytes 为解压后的 HTTP 正文字节，不是线路流量；cache_hits 是省略详情请求的次数，不是连接池复用。记录变化数按来源产品记录计，共享 ID 的 HTTP 请求只计实际次数。HTTP 条件缓存的304单独计入 not_modified。
+每轮 stderr 输出每源 requests、response_bytes、retries、http_errors、cache_hits、not_modified、new/changed/unchanged/removed，并保存到 主状态的 `last_update`。response_bytes 为解压后的 HTTP 正文字节，不是线路流量；cache_hits 是省略详情请求的次数，不是连接池复用。记录变化数按来源产品记录计，共享 ID 的 HTTP 请求只计实际次数。HTTP 条件缓存的304单独计入 not_modified。
 
 全部本地格式及兼容规则见 [设计文档](docs/design.md)。
 
@@ -116,7 +116,7 @@ GHSA/项目公告及CVE日志支持持久化ETag条件请求；项目公告按�
 
 NVD 对已有记录每7天按 CVE ID 批量复核（每批最多100条），不依赖产品关键词。本轮已查询到的记录不重复抓取；失败或缺项保留旧缓存并报告可能过期。新检出或旧缓存迁移后的首次更新可能多出复核请求。
 
-HTTP 条件缓存独立保存在 `<state所在目录>/http-cache.json.gz`，仅 update 读取；缺失或损坏会重新获取。旧 state.json 内嵌缓存在下次 update 保存时自动迁移。CVE 检查进度在磁盘上共享产品配置映射，兼容旧数据；summary/detail 不需要读取压缩 HTTP 缓存。备份业务状态时保留 state.json 和未完成的 `.cve-progress.json`，HTTP 旁文件可选。
+HTTP 条件缓存独立保存在 `<state所在目录>/http-cache.json.gz`，仅 update 读取；缺失或损坏会重新获取。旧 state.json 内嵌缓存在下次 update 保存时自动迁移。CVE 检查进度在磁盘上共享产品配置映射，兼容旧数据；summary/detail 不需要读取压缩 HTTP 缓存。备份业务状态时保留 state.sqlite（或显式使用的 JSON 状态）和未完成的 `.cve-progress.json`，HTTP 旁文件可选。
 
 同一状态目录的所有命令共用 `advisories.lock`，冲突时立即报错退出。该锁不影响 update 内部的通道并发；不同目录独立运行时，不要交叉共享展示历史等业务文件。
 
@@ -138,11 +138,11 @@ summary --list 提供窄屏列表：每个软件依次输出名称、KEV/Critica
 
 ```bash
 uv run main.py migrate-state --state state.json --output state.sqlite
-uv run main.py summary --state state.sqlite --list --all
-uv run main.py update --state state.sqlite
+uv run main.py summary --list --all
+uv run main.py update
 ```
 
-后续命令需继续指定 `--state state.sqlite`；默认仍使用旧 `state.json`。SQLite 按文档增量写入，显示命令只加载选中产品的 catalog；这一版 update 仍加载完整运行时状态。展示历史和 HTTP 缓存沿用同目录原文件，CVE 续传进度在迁移时复制到新状态对应路径。请勿交替更新新旧状态，以免两份缓存逐渐分叉。
+后续命令默认使用 `state.sqlite`，无需再指定 `--state`。旧 JSON 仍可通过 `--state state.json` 显式使用；程序不会自动回退或迁移旧文件。SQLite 按文档增量写入，显示命令只加载选中产品的 catalog；这一版 update 仍加载完整运行时状态。展示历史和 HTTP 缓存沿用同目录原文件，CVE 续传进度在迁移时复制到新状态对应路径。请勿交替更新新旧状态，以免两份缓存逐渐分叉。
 
 SQLite 在每次状态保存后自动执行 VACUUM 回收空间；summary/detail 不写数据库。若空间回收失败会输出警告，已经提交的更新仍然保留。
 
@@ -152,9 +152,9 @@ update 默认每次更新选中 NVD 产品的三分之一（向上取整）。�
 
 ```bash
 # 默认部分更新
-uv run main.py update --state state.sqlite
+uv run main.py update
 # 本次强制检查所有选中的 NVD 产品
-uv run main.py update --state state.sqlite --nvd-full
+uv run main.py update --nvd-full
 ```
 
 --nvd-full 不改变时间窗口，也不下载整个 NVD 数据库；--since/--history 显式回补时同样不抽样。其他来源不受影响，日志会显示 NVD 选中/跳过数量。

@@ -12,7 +12,7 @@ LEVELS = ['low', 'medium', 'high', 'critical']
 
 def common(parser):
     parser.add_argument('--products', type=Path, default=ROOT / 'products.json', help='Product configuration file')
-    parser.add_argument('--state', type=Path, default=ROOT / 'state.json')
+    parser.add_argument('--state', type=Path, default=ROOT / 'state.sqlite')
     parser.add_argument('-p', '--product', help='Product ID; comma-separated for update/summary')
     parser.add_argument('--output', type=Path)
 
