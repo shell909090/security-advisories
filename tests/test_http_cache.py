@@ -40,3 +40,32 @@ class CacheTests(unittest.TestCase):
         cache = HttpCache()
         self.assertEqual(cache.prepare('url', {}, {}, 'project'), (None, None))
         self.assertEqual(cache.prepare('url', {}, None, 'osv'), (None, None))
+
+    def test_shared_body_isolation_and_304_rollback(self):
+        body = [{'nested': {'value': 1}}]
+        previous = {'key': {'body': body, 'source': 'cve', 'used_at': 1, 'etag': 'v1'}}
+        cache = HttpCache(previous)
+        entry = dict(previous['key'])
+        result, _ = cache.decode(response(304), 'key', entry, 'cve')
+        result[0]['nested']['value'] = 99
+        self.assertEqual(body[0]['nested']['value'], 1)
+        self.assertEqual(previous['key']['used_at'], 1)
+        self.assertEqual(entry['used_at'], 1)
+        self.assertEqual(cache.snapshot(previous, {'cve'}), previous)
+        self.assertIs(cache.entries['key']['body'], body)
+
+    def test_prepare_and_store_preserve_body_ownership(self):
+        cache = HttpCache()
+        url = 'https://example.org/deltaLog.json'
+        key, _ = cache.prepare(url, {}, None, 'cve')
+        result, _ = cache.decode(response(body=[{'value': 1}], ETag='v1'), key, None, 'cve')
+        result[0]['value'] = 99
+        previous = cache.snapshot({}, set())
+        fresh = HttpCache(previous)
+        _, entry = fresh.prepare(url, {}, None, 'cve')
+        self.assertIs(entry['body'], previous[key]['body'])
+        entry['etag'] = 'changed'
+        self.assertEqual(previous[key]['etag'], 'v1')
+        self.assertEqual(entry['body'], [{'value': 1}])
+        fresh.decode(response(body=[{'value': 2}], ETag='v2'), key, entry, 'cve')
+        self.assertEqual(fresh.snapshot(previous, {'cve'}), previous)

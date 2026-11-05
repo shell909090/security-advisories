@@ -8,7 +8,8 @@ from .records import digest
 
 class HttpCache:
     def __init__(self, entries=None):
-        self.entries = copy.deepcopy(entries or {})
+        # Cached bodies are immutable internally; replace entries on writes.
+        self.entries = dict(entries or {})
         self.lock = threading.Lock()
 
     def prepare(self, url, headers, body, source):
@@ -17,7 +18,8 @@ class HttpCache:
             return None, None
         key = digest({'url': url, 'headers': headers})
         with self.lock:
-            entry = copy.deepcopy(self.entries.get(key))
+            cached = self.entries.get(key)
+            entry = dict(cached) if cached is not None else None
         if entry and 'body' in entry:
             validator = entry.get('etag')
             if validator:
@@ -30,7 +32,7 @@ class HttpCache:
         if response.status_code == 304:
             if key is None or not entry or 'body' not in entry:
                 raise ValueError('HTTP 304 without a complete cached response')
-            entry['used_at'] = time.time()
+            entry = dict(entry, used_at=time.time())
             with self.lock:
                 self.entries[key] = entry
             return copy.deepcopy(entry['body']), entry.get('link', '')
