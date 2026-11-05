@@ -20,7 +20,7 @@ uv run python main.py summary --all
 uv run python main.py summary --history --all
 uv run python main.py summary --shown     # 仅已展示，不修改历史
 
-# 指定产品，默认 High + Critical、近3天，原始描述摘要 + 四列总结表
+# 指定产品，默认 High + Critical、近3天，原始描述摘要 + 六列总结表
 uv run python main.py detail --product cpython
 uv run python main.py detail --product chrome --severity critical
 uv run python main.py detail --product chrome --severity high --days 7
@@ -46,7 +46,7 @@ make check                               # 测试 + 所有质量门限
 
 ## 更新与收录范围
 
-update 决定产品和最低收录级别，summary 只能二次收窄。降低 summary 门槛不会联网补抓，缓存门槛不足会在 stderr 提示重新 update。detail 默认包含 High + Critical；可选的 `--severity high` 精确匹配 High，不包含 Critical。详情先逐条展示漏洞原始描述，最后展示漏洞 ID、受影响版本、后果和原始链接的总结表；不输出评分、JSON 或证据明细。
+update 决定产品和最低收录级别，summary 只能二次收窄。降低 summary 门槛不会联网补抓，缓存门槛不足会在 stderr 提示重新 update。detail 默认包含 High + Critical；可选的 `--severity high` 精确匹配 High，不包含 Critical。详情先逐条展示漏洞原始描述，最后展示漏洞 ID、威胁级别、公告时间、受影响版本、后果和原始链接的总结表；不输出评分、JSON 或证据明细。
 
 `--days` 可缩写为 `-d`，默认 3，控制首次或配置变化时的回溯；已有进度时从检查点向前重叠 `--overlap-days 2` 天抓取。`--since` 显式指定开始时间。`--history` 回补支持历史查询的数据源，CVE 官方滚动日志超过覆盖窗口会明确报错，不能自动回补全库。
 

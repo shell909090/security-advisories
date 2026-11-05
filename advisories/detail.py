@@ -44,7 +44,11 @@ def render_row(index, row, product=None):
     consequences = '、'.join(CONSEQUENCES[tag] for tag in impact_tags(row)
                             if tag in CONSEQUENCES) or '未知'
     url = next((item['url'] for item in active_evidence(row) if item.get('url')), '未知')
-    values = [cell(row['id']), affected_versions(row, product), cell(consequences), cell(url)]
+    severity = row.get('severity') or 'unknown'
+    level = '未知' if severity == 'unknown' else severity.capitalize()
+    published = next((e['published'] for e in active_evidence(row)
+                      if e.get('published') and e.get('source', '').split(':')[0] != 'kev'), '未知')
+    values = [cell(row['id']), cell(level), cell(published), affected_versions(row, product), cell(consequences), cell(url)]
     return ['| ' + ' | '.join(values) + ' |']
 
 
@@ -61,7 +65,7 @@ def render(product, severity, rows, period='全部历史', config=None):
              f'时间范围：{period}（按发布时间或更新时间）', '']
     for row in rows:
         lines.extend(render_description(row))
-    lines.extend(['## 总结', '', '| 漏洞 ID | 受影响版本 | 后果 | 原始链接 |', '| --- | --- | --- | --- |'])
+    lines.extend(['## 总结', '', '| 漏洞 ID | 威胁级别 | 公告时间 | 受影响版本 | 后果 | 原始链接 |', '| --- | --- | --- | --- | --- | --- |'])
     for index, row in enumerate(rows, 1):
         lines.extend(render_row(index, row, config))
     return '\n'.join(lines) + '\n'

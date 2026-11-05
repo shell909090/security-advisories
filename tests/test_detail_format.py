@@ -34,3 +34,15 @@ class DetailFormatTests(unittest.TestCase):
     def test_missing_description(self):
         text = render('Product', 'high', [{'id': 'CVE-test', 'evidence': []}])
         self.assertIn('暂无原始描述', text)
+
+    def test_level_and_publication(self):
+        for level in ('high', 'critical'):
+            row = {'id': 'CVE-test', 'severity': level, 'evidence': [
+                {'published': 'old', 'withdrawn': True},
+                {'source': 'kev', 'published': 'kev-date'},
+                {'published': '2026-11-01', 'modified': 'new'}]}
+            self.assertIn(f'| {level.capitalize()} | 2026-11-01 |', render_row(1, row)[0])
+
+    def test_missing_publication(self):
+        row = {'id': 'CVE-test', 'evidence': [{'modified': 'new'}]}
+        self.assertIn('| CVE-test | 未知 | 未知 |', render_row(1, row)[0])
