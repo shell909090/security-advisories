@@ -1,17 +1,12 @@
 """Concise offline vulnerability details; source evidence stays in the cache."""
 import re
 from .evidence import active_evidence
-from .impact import impact_tags
+from .impact import CONSEQUENCES, impact_tags
 from .summary import cell
 from .versions import version_facts
 from .version_summary import component_label
 from .version_ranges import merge_spans
 
-CONSEQUENCES = {
-    'Crash': '崩溃', 'DoS': '拒绝服务', 'Sandbox Escape': '沙箱逃逸',
-    'Privilege Escalation': '权限提升', 'File Read': '文件读取',
-    'File Write': '任意文件写入', 'Code Execution': '代码执行', 'RCE': '远程代码执行',
-}
 
 
 def readable_span(span):

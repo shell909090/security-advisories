@@ -33,3 +33,10 @@ def impact_tags(row):
         for sentence in re.split(r'(?<=[.!?])\s+|\n', text):
             tags.update(sentence_tags(sentence))
     return sorted(tags)
+
+
+CONSEQUENCES = {
+    'Crash': '崩溃', 'DoS': '拒绝服务', 'Sandbox Escape': '沙箱逃逸',
+    'Privilege Escalation': '权限提升', 'File Read': '文件读取',
+    'File Write': '任意文件写入', 'Code Execution': '代码执行', 'RCE': '远程代码执行',
+}

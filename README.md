@@ -129,3 +129,5 @@ HTTP 条件缓存独立保存在 `<state所在目录>/http-cache.json.gz`，仅 
 默认 update 包含 CISA KEV，也可使用 `uv run python main.py update --sources kev`。每次下载官方目录并筛选最近两个自然月的 dateAdded；通用时间参数不改变此窗口。旧证据保留。KEV 未提供等级和版本时保持未知，KEV 一律按 Critical 优先级收录和筛选，保留原始评分。摘要单列 KEV，Critical/High 不重复统计 KEV；detail --severity critical 包含 KEV 并说明优先级。时间、最低版本和展示历史规则仍适用，新加入 KEV 会再次展示。最低版本配置不影响 update。
 
 更新等待时每30秒显示未完成任务。按一次 Ctrl-C 会取消后续请求，等待在途请求结束后保存已完成来源并以130退出；请等待保存完成，重复 Ctrl-C 或强杀仍可能跳过保存。
+
+summary --list 提供窄屏列表：每个软件依次输出名称、KEV/Critical/High 个数、受影响版本、公告修复版本、后果，共五行加一个空行。软件名前加 `## `，其余四行前加 `- `。长行自然折行，内容换行折叠为空格。复用产品分组、版本汇总和中文后果映射；缺失后果显示未知。筛选和展示历史规则不变，查看已展示内容可加 --all。

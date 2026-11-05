@@ -328,3 +328,5 @@ vendorProject/product 转为 affected 的 vendor/product 确认归属。severity
 所有子命令共享 `-p` / `--product` 和 `-d` / `--days` 别名，分别解析为 product 和 days 字段；默认值、校验及时间参数互斥规则保持不变。
 
 详情总表威胁级别使用合并 severity，公告时间取首个有 published 的活跃非 KEV 来源，保留原始格式；缺失显示未知，不使用更新时间代替。
+
+summary --list 提供窄屏列表：每个软件依次输出名称、KEV/Critical/High 个数、受影响版本、公告修复版本、后果，共五行加一个空行。软件名前加 `## `，其余四行前加 `- `。长行自然折行，内容换行折叠为空格。复用产品分组、版本汇总和中文后果映射；缺失后果显示未知。筛选和展示历史规则不变，查看已展示内容可加 --all。

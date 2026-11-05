@@ -12,7 +12,7 @@ def summary(args):
     candidates = catalog_rows(args)
     history = read_history(args)
     selected = select_summary(args, candidates, history)
-    emit(summary_format.render(selected), args.output)
+    emit(summary_format.render(selected, list_mode=args.list), args.output)
     if selected and not args.all and not args.shown:
         remember(history, selected)
         atomic_json(args.dedup_history, history)

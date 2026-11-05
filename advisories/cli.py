@@ -32,6 +32,7 @@ def update_options(parser):
 
 
 def summary_options(parser):
+    parser.add_argument('--list', action='store_true', help='Narrow-screen five-line product summaries')
     parser.add_argument('--ignore-min-version', action='store_true',
                         help='Skip configured minimum-version filtering for this summary')
     parser.add_argument('--min-severity', choices=LEVELS, default='critical')

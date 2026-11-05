@@ -35,6 +35,26 @@ class CommandTests(unittest.TestCase):
         self.assertNotIn('GHSA-high', text)
         self.assertEqual((self.root / 'history.json').read_bytes(), history)
 
+    def test_summary_list_layout_and_shared_history(self):
+        catalog(self.root, [record(), record('GHSA-high', severity='high'),
+                            record('GHSA-two', product='two')])
+        code, text, _ = command(self.root, 'summary', '--list', '--min-severity', 'high')
+        self.assertEqual(code, 0)
+        lines = text.splitlines()
+        self.assertEqual(len(lines), 12)
+        self.assertEqual(lines[0], '## ONE')
+        self.assertEqual(lines[1], '- KEV: 0 / Critical: 1 / High: 1')
+        self.assertTrue(lines[2].startswith('- 受影响版本：'))
+        self.assertTrue(lines[3].startswith('- 公告修复版本：'))
+        self.assertIn('远程代码执行', lines[4])
+        self.assertTrue(lines[4].startswith('- 后果：'))
+        self.assertEqual(lines[5], '')
+        self.assertEqual(lines[6], '## TWO')
+        self.assertEqual(lines[11], '')
+        self.assertEqual(command(self.root, 'summary', '--min-severity', 'high')[1], '')
+        self.assertEqual(command(self.root, 'summary', '--list')[1], '')
+        self.assertIn('ONE', command(self.root, 'summary', '--list', '--all')[1])
+
     def test_detail_default_levels_and_concise_output(self):
         catalog(self.root, [record(), record('GHSA-high', severity='high'),
                             record('GHSA-low', severity='low')])
